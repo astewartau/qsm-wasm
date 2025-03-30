@@ -7,10 +7,10 @@
   <body>
     <canvas id="gl" width="640" height="640"></canvas>
   </body>
-  <script src="https://unpkg.com/@niivue/niivue@0.32.0/dist/niivue.umd.js"></script>
-  <script>
+  <script type="module" async>
+    import * as niivue from "https://niivue.github.io/niivue/dist/index.js";
 
-    var nv = new niivue.Niivue({ isResizeCanvas: false });
+    var nv = new niivue.Niivue({ isResizeCanvas: false});
     nv.attachTo("gl");
     
   </script>
