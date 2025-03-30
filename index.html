@@ -1,17 +1,78 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>NiiVue</title>
+    <link rel="stylesheet" href="./style/grid.css">
+
   </head>
   <body>
-    <canvas id="gl" width="640" height="640"></canvas>
-  </body>
-  <script type="module" async>
-    import * as niivue from "https://niivue.github.io/niivue/dist/index.js";
-
-    var nv = new niivue.Niivue({ isResizeCanvas: false});
-    nv.attachTo("gl");
+    <noscript>niivue requires JavaScript.</noscript>
+   
     
-  </script>
-</html>
+      Drag and drop or
+      <button id="openBtn">upload image</button>
+   
+      <div id="container">
+        test1
+        <canvas id="gl1"></canvas>
+        test2
+    
+        <div id="intensity">&nbsp;</div>
+       
+    
+      </div>
+
+ 
+
+  </body>
+
+  </html>
+
+
+
+
+    <script type="module" async>
+      import * as niivue from "https://niivue.github.io/niivue/dist/index.js";
+
+      function updateIntensity(data) {
+      document.getElementById("intensity").innerHTML = "&nbsp;&nbsp;" + data.string;
+    }
+
+
+//upload image functionality
+    async function addVolumeFromFiles(f) {
+          console.log('attempting to open ', f[0].name)
+          console.log('details', f[0])
+          nv.loadFromFile(f[0])
+      }
+    openBtn.onclick = function () {
+        let input = document.createElement('input');
+        input.style.display = 'none';
+        input.type = 'file'
+        document.body.appendChild(input);
+        input.onchange = function (event) {
+          addVolumeFromFiles(event.target.files)
+        }
+        input.click()
+      }
+     
+      var nv = new niivue.Niivue({onLocationChange: updateIntensity});
+      await nv.attachTo("gl1");
+
+
+        
+      nv.setSliceType(nv.sliceTypeMultiplanar);
+
+
+
+
+
+
+
+      
+    </script>
+  
+
+
+
