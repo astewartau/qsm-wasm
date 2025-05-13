@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>RTS QSM with Niivue Viewer</title>
+  <link rel="stylesheet" href="./style/grid.css">
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.27.1/full/pyodide.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/14.6.4/nouislider.min.js"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/14.6.4/nouislider.min.css" rel="stylesheet"/>
+
+  
+</head>
+<body>
+
+  <h2>RTS QSM Inversion + Viewer</h2>
+
+  <label>Upload Fieldmap (.nii or .nii.gz):</label>
+  <input type="file" id="fieldmap" accept=".nii,.nii.gz">
+  <label>Upload Mask (.nii or .nii.gz):</label>
+  <input type="file" id="mask" accept=".nii,.nii.gz">
+  <button id="run">Run RTS & View Result</button>
+
+  <pre id="output">Waiting...</pre>
+
+      <div id="container">
+        test1
+        <canvas id="gl1"></canvas>
+        test2
+    
+        <div id="intensity">&nbsp;</div>
+
+
+        <h2 id="contrastTitle" hidden>Contrast</h2>
+
+        <div id="contrastControls" style="width: 80%; margin: 20px auto;">
+          <div id="contrastSlider"></div>
+          <div style="display: flex; justify-content: space-between; margin-top: 10px;">
+            <label id="minContrast" hidden>Min: <input type="number" id="minInput" step="0.1"></label>
+            <label id="maxContrast" hidden>Max: <input type="number" id="maxInput" step="0.1"></label>
+          </div>
+        </div>
+        
+        <div >
+         
+          <div id="contrastSlider"></div>
+
+      </div>
+    
+      </div>
+
+  <script type="module">
+    import * as niivue from "https://niivue.github.io/niivue/dist/index.js";
+
+    let pyodide;
+    const nv = new niivue.Niivue({ onLocationChange: (data) => {
+      document.getElementById("intensity").innerHTML = "&nbsp;&nbsp;" + data.string;
+    }});
+    await nv.attachTo("gl1");
+    nv.setMultiplanarPadPixels(5);
+    nv.setSliceType(nv.sliceTypeMultiplanar);
+
+    async function initPyodide() {
+      document.getElementById("output").textContent = "Loading Pyodide...";
+      pyodide = await loadPyodide();
+      await pyodide.loadPackage("micropip");
+
+      await pyodide.runPythonAsync(`
+        import micropip
+        await micropip.install("nibabel")
+      `);
+      await pyodide.loadPackage(["numpy", "scipy"]);
+      const pythonCode = await fetch("unwrap.py").then(r => r.text());
+      await pyodide.runPythonAsync(pythonCode);
+      document.getElementById("output").textContent = "RTS module loaded.";
+    }
+
+    async function saveToFS(file, name) {
+      const buf = await file.arrayBuffer();
+      pyodide.FS.writeFile(name, new Uint8Array(buf));
+    }
+
+    function setupContrast(volume) {
+      const contrastSlider = document.getElementById("contrastSlider");
+      const minCon = document.getElementById("minContrast");
+      const maxCon = document.getElementById("maxContrast");
+      const minInput = document.getElementById("minInput");
+      const maxInput = document.getElementById("maxInput");
+      const contrastTitle = document.getElementById("contrastTitle");
+
+      contrastTitle.hidden = false;
+      minCon.hidden = false;
+      maxCon.hidden = false;
+
+      const startMin = volume.cal_min;
+      const startMax = volume.cal_max;
+
+      if (contrastSlider.noUiSlider) {
+        contrastSlider.noUiSlider.destroy();
+      }
+
+      noUiSlider.create(contrastSlider, {
+        start: [startMin, startMax],
+        connect: true,
+        tooltips: true,
+        range: {
+          min: volume.global_min,
+          max: volume.global_max
+        }
+      });
+
+      minInput.value = startMin.toFixed(2);
+      maxInput.value = startMax.toFixed(2);
+
+      contrastSlider.noUiSlider.on('update', (values) => {
+        const [min, max] = values.map(parseFloat);
+        volume.cal_min = min;
+        volume.cal_max = max;
+        nv.updateGLVolume();
+        minInput.value = min.toFixed(2);
+        maxInput.value = max.toFixed(2);
+      });
+
+      [minInput, maxInput].forEach((input, i) => {
+        input.addEventListener("change", () => {
+          const min = parseFloat(minInput.value);
+          const max = parseFloat(maxInput.value);
+          contrastSlider.noUiSlider.set([min, max]);
+        });
+      });
+    }
+
+    document.getElementById("run").addEventListener("click", async () => {
+      const out = document.getElementById("output");
+      const fieldmap = document.getElementById("fieldmap").files[0];
+      const mask = document.getElementById("mask").files[0];
+      if (!fieldmap || !mask) {
+        out.textContent = "Please upload both fieldmap and mask files.";
+        return;
+      }
+
+      out.textContent = "Saving files...";
+      await saveToFS(fieldmap, "fieldmap.nii");
+      await saveToFS(mask, "mask.nii");
+
+      try {
+        out.textContent = "Running RTS...";
+        const runUnwrap = pyodide.globals.get("run_unwrap");
+        const resultPath = runUnwrap("fieldmap.nii");
+
+        const resultBytes = pyodide.FS.readFile(resultPath);
+        const blob = new Blob([resultBytes], { type: "application/octet-stream" });
+        const file = new File([blob], "rts_output.nii");
+
+        out.textContent = "Displaying result in viewer...";
+        const volume = await nv.loadFromFile(file);
+        setupContrast(volume);
+
+        out.textContent = "Done. RTS result displayed.";
+      } catch (err) {
+        console.error(err);
+        out.textContent = "Error: " + err.message;
+      }
+    });
+
+    initPyodide();
+  </script>
+</body>
+</html>

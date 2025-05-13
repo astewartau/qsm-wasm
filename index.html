@@ -1,79 +1,102 @@
-
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <link rel="stylesheet" href="./style/grid.css">
+<head>
+  <meta charset="UTF-8">
+  <title>QSM RTS with nibabel + Pyodide</title>
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.27.1/full/pyodide.js"></script>
 
-  </head>
-  <body>
-    <noscript>niivue requires JavaScript.</noscript>
-   
-    
-      Drag and drop or
-      <button id="openBtn">upload image</button>
-   
-      <div id="container">
-        test1
-        <canvas id="gl1"></canvas>
-        test2
-    
-        <div id="intensity">&nbsp;</div>
-       
-    
-      </div>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; max-width: 800px; margin: auto; }
+    input, button { margin: 1rem 0; }
+    canvas { width: 100%; height: 400px; display: block; margin-top: 2rem; }
+    pre { background: #f0f0f0; padding: 1rem; }
+  </style>
+</head>
+<body>
+  <h2>RTS QSM Inversion</h2>
 
- 
+  <label>Upload Fieldmap (.nii or .nii.gz):</label>
+  <input type="file" id="fieldmap" accept=".nii,.nii.gz">
+<br>
+  <label>Upload Mask (.nii or .nii.gz):</label>
+  <input type="file" id="mask" accept=".nii,.nii.gz">
+  <br>
 
-  </body>
+  <button id="run">Run RTS</button>
+  <pre id="output">Waiting...</pre>
+  <canvas id="gl1"></canvas>
 
-  </html>
+  <script type="module">
+    let pyodide;
 
+    async function initPyodide() {
+      document.getElementById("output").textContent = "Loading Pyodide...";
+      pyodide = await loadPyodide();
+      await pyodide.loadPackage("micropip");
 
+      await pyodide.runPythonAsync(`
+        import micropip
+        await micropip.install("nibabel")
+      `);
 
+      await pyodide.loadPackage("numpy");
+      await pyodide.loadPackage("scipy");
+      const pythonCode = await fetch("unwrap.py").then(r => r.text());
+      await pyodide.runPythonAsync(pythonCode);
 
-    <script type="module" async>
-      import * as niivue from "https://niivue.github.io/niivue/dist/index.js";
-
-      function updateIntensity(data) {
-      document.getElementById("intensity").innerHTML = "&nbsp;&nbsp;" + data.string;
+      document.getElementById("output").textContent = "RTS module loaded.";
     }
 
+    async function saveToPyodideFS(file, name) {
+      const arrayBuffer = await file.arrayBuffer();
+      pyodide.FS.writeFile(name, new Uint8Array(arrayBuffer));
+    }
 
-//upload image functionality
-    async function addVolumeFromFiles(f) {
-          console.log('attempting to open ', f[0].name)
-          console.log('details', f[0])
-          nv.loadFromFile(f[0])
+    document.getElementById("run").addEventListener("click", async () => {
+      const out = document.getElementById("output");
+      const fieldmapFile = document.getElementById("fieldmap").files[0];
+      const maskFile = document.getElementById("mask").files[0];
+
+      if (!fieldmapFile || !maskFile) {
+        out.textContent = "Please upload both fieldmap and mask files.";
+        return;
       }
-    openBtn.onclick = function () {
-        let input = document.createElement('input');
-        input.style.display = 'none';
-        input.type = 'file'
-        document.body.appendChild(input);
-        input.onchange = function (event) {
-          addVolumeFromFiles(event.target.files)
-        }
-        input.click()
+
+      out.textContent = "Saving files to Pyodide...";
+      await saveToPyodideFS(fieldmapFile, "fieldmap.nii");
+      await saveToPyodideFS(maskFile, "mask.nii");
+
+      out.textContent = "Running RTS...";
+      try {
+        //const runRTS = pyodide.globals.get("run_rts_nib");
+        //const resultPath = runRTS("fieldmap.nii", "mask.nii");
+
+        const runUnwrap = pyodide.globals.get("run_unwrap");
+        const resultPath = runUnwrap("fieldmap.nii");
+
+
+
+        const outputBytes = pyodide.FS.readFile(resultPath);
+        const blob = new Blob([outputBytes], { type: "application/octet-stream" });
+        const url = URL.createObjectURL(blob);
+
+        // Download the output
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "rts_output.nii";
+        a.click();
+        URL.revokeObjectURL(url);
+
+        out.textContent = "RTS complete. Output downloaded.";
+
+
+      } catch (err) {
+        console.error(err);
+        out.textContent = "Error: " + err.message;
       }
-     
-      var nv = new niivue.Niivue({onLocationChange: updateIntensity});
-      await nv.attachTo("gl1");
+    });
 
-
-
-      nv.setMultiplanarPadPixels(5);
-      nv.setSliceType(nv.sliceTypeMultiplanar);
-
-
-
-
-
-
-
-      
-    </script>
-  
-
-
-
+    initPyodide();
+  </script>
+</body>
+</html>
