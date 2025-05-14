@@ -5,6 +5,8 @@ import time
 
 #https://github.com/korbinian90/MriResearchTools.jl/blob/master/src/laplacianunwrapping.jl
 
+"""Laplacian phase unwrapping (Schofield & Zhu 2003)"""
+
 def pqterm(shape):
     """
     Compute the Laplacian eigenvalue term matrix (p^2 + q^2 + r^2 + ...) 
@@ -40,13 +42,13 @@ def pqterm(shape):
 
 
 def dct_laplacian(x):
-    """∇²(x) with Dirichlet BC using DCT"""
+    """second derivative using DCT"""
     shape = x.shape
     pq = pqterm(shape)
     return - (2 * np.pi)**x.ndim / np.prod(shape) * idctn(pq * dctn(x, type=2, norm='ortho'), type=2, norm='ortho')
 
 def dct_laplacian_inverse(x):
-    """∇⁻²(x) using DCT"""
+    """inverse second derivative using DCT"""
     shape = x.shape
     pq = pqterm(shape)
     pq[pq == 0] = np.inf  # avoid divide by zero
@@ -64,7 +66,7 @@ def run_unwrap(file_path):
     affine = field_nii.affine
 
 
-    """Laplacian phase unwrapping (Schofield & Zhu 2003)"""
+
 
     #Convert np.memmap (from the field data) to np.ndarray
     phi_wrapped = np.asarray(phi_wrapped, dtype=np.float64)

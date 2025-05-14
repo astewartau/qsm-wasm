@@ -10,7 +10,7 @@ def run_masking(fieldmap_path):
 
     #Treshholding
     #Cast to int, because bool array is not supported in NIfTI
-    mask = (norm_data > 0.2).astype(np.uint8)  
+    mask = (norm_data > 0.3).astype(np.uint8)  
 
 
 

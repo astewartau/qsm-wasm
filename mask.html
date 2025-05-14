@@ -45,6 +45,11 @@
           <div id="contrastSlider"></div>
 
       </div>
+
+       <h3>Masking Threshold</h3>
+    <div id="thresholdSlider" style="width: 80%; margin: 20px auto;"></div>
+    <label>Current Threshold: <span id="thresholdValue">75</span></label>
+      
     
       </div>
 
@@ -75,11 +80,14 @@
       await pyodide.runPythonAsync(`
         import micropip
         await micropip.install("nibabel")
+        
+
       `);
       await pyodide.loadPackage(["numpy", "scipy"]);
-      const pythonCode = await fetch("masking.py").then(r => r.text());
+      const pythonCode = await fetch("masking3.py").then(r => r.text());
       await pyodide.runPythonAsync(pythonCode);
       document.getElementById("output").textContent = "RTS module loaded.";
+  
     }
 
     async function saveToFS(file, name) {
@@ -137,6 +145,52 @@
       });
     }
 
+
+
+
+    let threshold = 75;
+    const thresholdSlider = document.getElementById("thresholdSlider");
+    const thresholdValue = document.getElementById("thresholdValue");
+
+    noUiSlider.create(thresholdSlider, {
+      start: [threshold],
+      connect: [true, false],
+      range: {
+        min: 50,
+        max: 100
+      },
+      step: 1,
+      tooltips: true
+    });
+
+    thresholdSlider.noUiSlider.on("change", async (values) => {
+      
+      threshold = parseInt(values[0]);
+      thresholdValue.textContent = threshold.toFixed(0);
+
+      try {
+    
+    const runUnwrap = pyodide.globals.get("run_masking");
+
+    const resultPath = runUnwrap("fieldmap.nii", threshold);
+
+    const resultBytes = pyodide.FS.readFile(resultPath);
+    const blob = new Blob([resultBytes], { type: "application/octet-stream" });
+    const file = new File([blob], `mask_${Date.now()}.nii`);
+
+    
+    await nv.loadFromFile(file);
+      console.log(nv.volumes.length)
+      nv.removeVolumeByIndex(0);
+   
+
+
+  } catch (err) {
+    console.error(err);
+
+  }
+    });
+
 document.getElementById("run").addEventListener("click", async () => {
   const out = document.getElementById("output");
   const fieldmap = document.getElementById("fieldmap").files[0];
@@ -152,14 +206,21 @@ document.getElementById("run").addEventListener("click", async () => {
 
   try {
     out.textContent = "Running RTS...";
-    const runUnwrap = pyodide.globals.get("run_masking");
-    const resultPath = runUnwrap("fieldmap.nii");
+    const runMasking = pyodide.globals.get("run_masking");
+    const resultPath = runMasking("fieldmap.nii", threshold);
 
     const resultBytes = pyodide.FS.readFile(resultPath);
+    
     const blob = new Blob([resultBytes], { type: "application/octet-stream" });
+    pyodide.FS.unlink(resultPath);
     const file = new File([blob], "rts_output.nii");
 
     out.textContent = "Displaying result in viewer...";
+
+    //make sure to remove the previous volume, if any (in case of multiple runs)
+    if (nv.volumes.length > 0) {
+  nv.removeVolumeByIndex(0);  
+}
     await nv.loadFromFile(file); // ✅ imageLoaded callback will handle contrast
     out.textContent = "Done. RTS result displayed.";
 
