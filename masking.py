@@ -1,19 +1,22 @@
 import numpy as np
 import nibabel as nib
 
-def auto_mask_and_render(fieldmap_path):
+def run_masking(fieldmap_path):
     img = nib.load(fieldmap_path)
     data = img.get_fdata()
 
     # Normalize and threshold
     norm_data = data / np.max(data)
-    mask = norm_data > 0.2  # Simple threshold
+
+    #Treshholding
+    #Cast to int, because bool array is not supported in NIfTI
+    mask = (norm_data > 0.2).astype(np.uint8)  
 
 
 
-    # Select the rightmost axial slice (e.g. slice with max brain area)
-    slice_sums = mask.sum(axis=(0, 1))
-    best_slice = np.argmax(slice_sums)
-    slice2d = mask[:, :, best_slice].astype(np.uint8)
+    # Create new NIfTI image with the same affine as input
+    out_img = nib.Nifti1Image(mask, affine=img.affine)
+    out_path = "rts_output.nii"
+    nib.save(out_img, out_path)
 
-    return slice2d
+    return out_path  # ✅ now JS can load the file from Pyodide FS

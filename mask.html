@@ -55,6 +55,14 @@
     const nv = new niivue.Niivue({ onLocationChange: (data) => {
       document.getElementById("intensity").innerHTML = "&nbsp;&nbsp;" + data.string;
     }});
+
+    nv.onImageLoaded = function (volume) {
+        setupContrast(volume); // ✅ safe to access cal_min, etc.
+    }   ;
+
+
+
+
     await nv.attachTo("gl1");
     nv.setMultiplanarPadPixels(5);
     nv.setSliceType(nv.sliceTypeMultiplanar);
@@ -69,7 +77,7 @@
         await micropip.install("nibabel")
       `);
       await pyodide.loadPackage(["numpy", "scipy"]);
-      const pythonCode = await fetch("unwrap.py").then(r => r.text());
+      const pythonCode = await fetch("masking.py").then(r => r.text());
       await pyodide.runPythonAsync(pythonCode);
       document.getElementById("output").textContent = "RTS module loaded.";
     }
@@ -129,38 +137,38 @@
       });
     }
 
-    document.getElementById("run").addEventListener("click", async () => {
-      const out = document.getElementById("output");
-      const fieldmap = document.getElementById("fieldmap").files[0];
-      const mask = document.getElementById("mask").files[0];
-      if (!fieldmap || !mask) {
-        out.textContent = "Please upload both fieldmap and mask files.";
-        return;
-      }
+document.getElementById("run").addEventListener("click", async () => {
+  const out = document.getElementById("output");
+  const fieldmap = document.getElementById("fieldmap").files[0];
+  const mask = document.getElementById("mask").files[0];
+  if (!fieldmap || !mask) {
+    out.textContent = "Please upload both fieldmap and mask files.";
+    return;
+  }
 
-      out.textContent = "Saving files...";
-      await saveToFS(fieldmap, "fieldmap.nii");
-      await saveToFS(mask, "mask.nii");
+  out.textContent = "Saving files...";
+  await saveToFS(fieldmap, "fieldmap.nii");
+  await saveToFS(mask, "mask.nii");
 
-      try {
-        out.textContent = "Running RTS...";
-        const runUnwrap = pyodide.globals.get("run_unwrap");
-        const resultPath = runUnwrap("fieldmap.nii");
+  try {
+    out.textContent = "Running RTS...";
+    const runUnwrap = pyodide.globals.get("run_masking");
+    const resultPath = runUnwrap("fieldmap.nii");
 
-        const resultBytes = pyodide.FS.readFile(resultPath);
-        const blob = new Blob([resultBytes], { type: "application/octet-stream" });
-        const file = new File([blob], "rts_output.nii");
+    const resultBytes = pyodide.FS.readFile(resultPath);
+    const blob = new Blob([resultBytes], { type: "application/octet-stream" });
+    const file = new File([blob], "rts_output.nii");
 
-        out.textContent = "Displaying result in viewer...";
-        const volume = await nv.loadFromFile(file);
-        setupContrast(volume);
+    out.textContent = "Displaying result in viewer...";
+    await nv.loadFromFile(file); // ✅ imageLoaded callback will handle contrast
+    out.textContent = "Done. RTS result displayed.";
 
-        out.textContent = "Done. RTS result displayed.";
-      } catch (err) {
-        console.error(err);
-        out.textContent = "Error: " + err.message;
-      }
-    });
+  } catch (err) {
+    console.error(err);
+    out.textContent = "Error: " + err.message;
+  }
+});
+
 
     initPyodide();
   </script>
