@@ -1,4 +1,0 @@
-[deps]
-NIfTI = "a3a9e032-41b5-5fc4-967a-a6b7a19844d3"
-QSM = "794fc106-2fa4-440f-961c-0d7d7b47016a"
-WebAssemblyCompiler = "9bc180e8-272c-4d08-a460-9682f1716cbe"

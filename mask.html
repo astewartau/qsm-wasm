@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>RTS QSM with Niivue Viewer</title>
   <link rel="stylesheet" href="./style/grid.css">
+  <link rel="stylesheet" href="./style/input.css">
   <script src="https://cdn.jsdelivr.net/pyodide/v0.27.1/full/pyodide.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/14.6.4/nouislider.min.js"></script>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/14.6.4/nouislider.min.css" rel="stylesheet"/>
@@ -14,11 +15,17 @@
 
   <h2>RTS QSM Inversion + Viewer</h2>
 
-  <label>Upload Fieldmap (.nii or .nii.gz):</label>
-  <input type="file" id="fieldmap" accept=".nii,.nii.gz">
-  <label>Upload Mask (.nii or .nii.gz):</label>
-  <input type="file" id="mask" accept=".nii,.nii.gz">
-  <button id="run">Run RTS & View Result</button>
+<div class="upload-wrapper">
+  <h2>QSM Input</h2>
+
+  <label for="magnitude">Upload <b>magnitude image</b> (.nii or .nii.gz):</label>
+  <input type="file" id="magnitude" accept=".nii,.nii.gz">
+
+  <label for="phase">Upload <b>phase image</b> (.nii or .nii.gz):</label>
+  <input type="file" id="phase" accept=".nii,.nii.gz">
+<br>
+  <button id="run">Run QSM pipeline</button>
+</div>
 
   <pre id="output">Waiting...</pre>
 

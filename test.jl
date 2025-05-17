@@ -1,12 +1,12 @@
 import Pkg
-Pkg.activate("qsm_env")
+Pkg.activate("env_julia")
 
 using QSM
 using NIfTI
 
 # Load your background-corrected field map (units: ppm)
-fl = NIfTI.niread("fieldmap-local.nii")
-mask = NIfTI.niread("mask.nii").raw  .> 0.5# Convert to Bool if needed
+fl = NIfTI.niread("./test_algo/sharp.nii")
+mask = NIfTI.niread("./test_algo/mask.nii").raw  .> 0.5# Convert to Bool if needed
 
 
 

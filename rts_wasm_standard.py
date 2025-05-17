@@ -24,7 +24,7 @@ def dipole_kernel(shape, vsz, bdir=(0, 0, 1)):
     D[0, 0, 0] = 0
     return D.astype(np.complex128)
 
-def run_rts_nib(fieldmap_path, mask_path, output_path="rts_output.nii", vsz=None, bdir=(0, 0, 1), delta=0.15):
+def run_rts(fieldmap_path, mask_path, output_path="rts_output.nii", vsz=None, bdir=(0, 0, 1), delta=0.15):
 
     #load files
     field_nii = nib.load(fieldmap_path)

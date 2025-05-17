@@ -15,11 +15,11 @@ def run_masking(fieldmap_path, treshold = 80):
     smoothed = gaussian_filter(data, sigma=1)
 
     # Step 2: Adaptive threshold - aggressive
-    thresh = np.percentile(smoothed, treshold)  # Empirically better than mean+std
+    thresh = np.percentile(smoothed, treshold)  
     binary = smoothed > thresh
 
     # Step 3: 3D connected component analysis
-    struct = generate_binary_structure(3, 2)  # 26-connectivity
+    struct = generate_binary_structure(3, 2)  
     labeled, num = label(binary, structure=struct)
     if num == 0:
         raise RuntimeError("No foreground found.")

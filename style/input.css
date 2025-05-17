@@ -1,0 +1,38 @@
+.upload-wrapper {
+    text-align: center;
+    margin-top: 5vh;
+    font-family: Arial, sans-serif;
+  }
+
+  label {
+    display: block;
+    margin-top: 1.2rem;
+    font-weight: bold;
+    color: #333;
+  }
+
+  input[type="file"] {
+    margin-top: 0.3rem;
+    margin-bottom: 1rem;
+    padding: 0.4rem;
+    font-size: 0.95rem;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+  }
+
+  #run {
+    margin-top: 1.5rem;
+    padding: 0.6rem 1.5rem;
+    font-size: 1rem;
+    font-weight: bold;
+    background-color: #1e90ff;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+  }
+
+  #run:hover {
+    background-color: #007acc;
+  }
