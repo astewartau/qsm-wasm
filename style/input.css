@@ -33,6 +33,30 @@
     transition: background-color 0.3s ease;
   }
 
+  
+
   #run:hover {
     background-color: #007acc;
   }
+
+.use-mask-wrapper {
+  text-align: center;
+  margin-top: 80px;
+  padding-top: 80px;
+}
+
+#useMask {
+  padding: 10px 24px;
+  font-size: 16px;
+  background-color: #1976d2;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.3s ease, transform 0.2s ease;
+}
+
+#useMask:hover {
+  background-color: #1565c0;
+  transform: translateY(-1px);
+}

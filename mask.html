@@ -13,10 +13,10 @@
 </head>
 <body>
 
-  <h2>RTS QSM Inversion + Viewer</h2>
+  <h2>Browser-based QSM using WebAssembly</h2>
 
 <div class="upload-wrapper">
-  <h2>QSM Input</h2>
+
 
   <label for="magnitude">Upload <b>magnitude image</b> (.nii or .nii.gz):</label>
   <input type="file" id="magnitude" accept=".nii,.nii.gz">
@@ -32,18 +32,19 @@
       <div id="container">
         test1
         <canvas id="gl1"></canvas>
-        test2
+        
     
         <div id="intensity">&nbsp;</div>
 
 
-        <h2 id="contrastTitle" hidden>Contrast</h2>
+        
 
-        <div id="contrastControls" style="width: 80%; margin: 20px auto;">
+        <div id="contrastControls" style="width: 80%; margin: 20px auto;" hidden>
+          <h2 id="contrastTitle">Contrast</h2>
           <div id="contrastSlider"></div>
           <div style="display: flex; justify-content: space-between; margin-top: 10px;">
-            <label id="minContrast" hidden>Min: <input type="number" id="minInput" step="0.1"></label>
-            <label id="maxContrast" hidden>Max: <input type="number" id="maxInput" step="0.1"></label>
+            <label id="minContrast" >Min: <input type="number" id="minInput" step="0.1"></label>
+            <label id="maxContrast" >Max: <input type="number" id="maxInput" step="0.1"></label>
           </div>
         </div>
         
@@ -53,12 +54,19 @@
 
       </div>
 
+      
+    <div id="thresholdControls" hidden>
        <h3>Masking Threshold</h3>
     <div id="thresholdSlider" style="width: 80%; margin: 20px auto;"></div>
     <label>Current Threshold: <span id="thresholdValue">75</span></label>
+
+    </div>
       
-    
+    <div class="use-mask-wrapper">
+  <button id="useMask" hidden>Use Mask</button>
+</div>
       </div>
+     
 
   <script type="module">
     import * as niivue from "https://niivue.github.io/niivue/dist/index.js";
@@ -68,9 +76,6 @@
       document.getElementById("intensity").innerHTML = "&nbsp;&nbsp;" + data.string;
     }});
 
-    nv.onImageLoaded = function (volume) {
-        setupContrast(volume); // ✅ safe to access cal_min, etc.
-    }   ;
 
 
 
@@ -108,11 +113,10 @@
       const maxCon = document.getElementById("maxContrast");
       const minInput = document.getElementById("minInput");
       const maxInput = document.getElementById("maxInput");
-      const contrastTitle = document.getElementById("contrastTitle");
+      const contrastControls = document.getElementById("contrastControls");
 
-      contrastTitle.hidden = false;
-      minCon.hidden = false;
-      maxCon.hidden = false;
+      contrastControls.hidden = false;
+
 
       const startMin = volume.cal_min;
       const startMax = volume.cal_max;
@@ -156,6 +160,11 @@
 
 
     let threshold = 75;
+
+
+    function setupThreshold() {
+    const thresholdControls = document.getElementById("thresholdControls");
+    thresholdControls.hidden = false;
     const thresholdSlider = document.getElementById("thresholdSlider");
     const thresholdValue = document.getElementById("thresholdValue");
 
@@ -171,15 +180,18 @@
     });
 
     thresholdSlider.noUiSlider.on("change", async (values) => {
+      thresholdValue.textContent = "Loading...";
+
       
-      threshold = parseInt(values[0]);
-      thresholdValue.textContent = threshold.toFixed(0);
+
+      
+
 
       try {
     
-    const runUnwrap = pyodide.globals.get("run_masking");
+    const runMasking = pyodide.globals.get("run_masking");
 
-    const resultPath = runUnwrap("fieldmap.nii", threshold);
+    const resultPath = runMasking("magnitude.nii", threshold);
 
     const resultBytes = pyodide.FS.readFile(resultPath);
     const blob = new Blob([resultBytes], { type: "application/octet-stream" });
@@ -190,7 +202,8 @@
       console.log(nv.volumes.length)
       nv.removeVolumeByIndex(0);
    
-
+      threshold = parseInt(values[0]);
+      thresholdValue.textContent = threshold.toFixed(0);
 
   } catch (err) {
     console.error(err);
@@ -198,29 +211,37 @@
   }
     });
 
+  }
+ //run masking
+ 
+ let contrastEnabled = false;
+ 
+
+
+
 document.getElementById("run").addEventListener("click", async () => {
   const out = document.getElementById("output");
-  const fieldmap = document.getElementById("fieldmap").files[0];
-  const mask = document.getElementById("mask").files[0];
-  if (!fieldmap || !mask) {
-    out.textContent = "Please upload both fieldmap and mask files.";
+  const magnitude = document.getElementById("magnitude").files[0];
+  const phase = document.getElementById("phase").files[0];
+  if (!magnitude || !phase) {
+    out.textContent = "Please upload both magnitude and phase images.";
     return;
   }
 
-  out.textContent = "Saving files...";
-  await saveToFS(fieldmap, "fieldmap.nii");
-  await saveToFS(mask, "mask.nii");
+
+  await saveToFS(magnitude, "magnitude.nii");
+  await saveToFS(phase, "phase.nii");
 
   try {
-    out.textContent = "Running RTS...";
+    out.textContent = "Creating initial mask...";
     const runMasking = pyodide.globals.get("run_masking");
-    const resultPath = runMasking("fieldmap.nii", threshold);
+    const resultPath = runMasking("magnitude.nii", threshold);
 
     const resultBytes = pyodide.FS.readFile(resultPath);
     
     const blob = new Blob([resultBytes], { type: "application/octet-stream" });
     pyodide.FS.unlink(resultPath);
-    const file = new File([blob], "rts_output.nii");
+    const file = new File([blob], "masking_output.nii");
 
     out.textContent = "Displaying result in viewer...";
 
@@ -228,8 +249,12 @@ document.getElementById("run").addEventListener("click", async () => {
     if (nv.volumes.length > 0) {
   nv.removeVolumeByIndex(0);  
 }
-    await nv.loadFromFile(file); // ✅ imageLoaded callback will handle contrast
-    out.textContent = "Done. RTS result displayed.";
+    await nv.loadFromFile(file); 
+    setupThreshold();
+    out.textContent = "Masking result loaded. Adjust threshold as needed.";
+
+    const useMaskButton = document.getElementById("useMask");
+    useMaskButton.hidden = false;
 
   } catch (err) {
     console.error(err);
