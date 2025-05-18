@@ -41,7 +41,7 @@
 
       await pyodide.loadPackage("numpy");
       await pyodide.loadPackage("scipy");
-      const pythonCode = await fetch("bg_removal_sharp.py").then(r => r.text());
+      const pythonCode = await fetch("bg_removal_vsharp1.py").then(r => r.text());
       await pyodide.runPythonAsync(pythonCode);
 
       document.getElementById("output").textContent = "RTS module loaded.";

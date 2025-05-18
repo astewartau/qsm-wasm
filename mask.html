@@ -21,8 +21,11 @@
   <label for="magnitude">Upload <b>magnitude image</b> (.nii or .nii.gz):</label>
   <input type="file" id="magnitude" accept=".nii,.nii.gz">
 
-  <label for="phase">Upload <b>phase image</b> (.nii or .nii.gz):</label>
+  <label id="phaseLabel" for="phase">Upload <b>phase image</b> (.nii or .nii.gz):</label>
   <input type="file" id="phase" accept=".nii,.nii.gz">
+  <br>
+  <button id="vis_magnitude" class="vis">Visualise magnitude</button>
+  <button id="vis_phase" class="vis">Visualise phase</button>
 <br>
   <button id="run">Run QSM pipeline</button>
 </div>
@@ -35,6 +38,16 @@
         
     
         <div id="intensity">&nbsp;</div>
+
+        <div id="stage-buttons" hidden>
+          <button id="showMagnitude">Magnitude</button>
+          <button id="showPhase">Phase</button>
+          <br>
+          <button id="showMask">Mask</button>
+          <button id="showUnwrapped">Unwrapped</button>
+          <button id="showBgRemoved">BG Removed</button>
+          <button id="showDipoleInversed">Dipole Inversed</button>
+        </div>
 
 
         
@@ -54,7 +67,10 @@
 
       </div>
 
-      
+
+
+
+
     <div id="thresholdControls" hidden>
        <h3>Masking Threshold</h3>
     <div id="thresholdSlider" style="width: 80%; margin: 20px auto;"></div>
@@ -85,7 +101,7 @@
     nv.setSliceType(nv.sliceTypeMultiplanar);
 
     async function initPyodide() {
-      document.getElementById("output").textContent = "Loading Pyodide...";
+      document.getElementById("output").textContent = "Loading modules...";
       pyodide = await loadPyodide();
       await pyodide.loadPackage("micropip");
 
@@ -96,13 +112,32 @@
 
       `);
       await pyodide.loadPackage(["numpy", "scipy"]);
-      const pythonCode = await fetch("masking3.py").then(r => r.text());
-      await pyodide.runPythonAsync(pythonCode);
-      document.getElementById("output").textContent = "RTS module loaded.";
+
+      const maskingCode = await fetch("masking3.py").then(r => r.text());
+      await pyodide.runPythonAsync(maskingCode);
+
+      const unwrappingCode = await fetch("unwrap.py").then(r => r.text());
+      await pyodide.runPythonAsync(unwrappingCode);
+
+      const bgremovalCode = await fetch("bg_removal_sharp.py").then(r => r.text());
+      await pyodide.runPythonAsync(bgremovalCode);
+
+      const inversionCode = await fetch("rts_wasm_standard.py").then(r => r.text());
+      await pyodide.runPythonAsync(inversionCode);
+
+
+
+
+
+      document.getElementById("output").textContent = "All modules loaded.";
   
     }
 
     async function saveToFS(file, name) {
+      const exists = pyodide.FS.analyzePath(name).exists;
+  if (exists) {
+    return;
+  }
       const buf = await file.arrayBuffer();
       pyodide.FS.writeFile(name, new Uint8Array(buf));
     }
@@ -173,7 +208,7 @@
       connect: [true, false],
       range: {
         min: 50,
-        max: 100
+        max: 90
       },
       step: 1,
       tooltips: true
@@ -190,19 +225,20 @@
       try {
     
     const runMasking = pyodide.globals.get("run_masking");
+    threshold = parseInt(values[0]);
 
-    const resultPath = runMasking("magnitude.nii", threshold);
+    mask_path = runMasking(magnitude_path, threshold);
 
-    const resultBytes = pyodide.FS.readFile(resultPath);
+    const resultBytes = pyodide.FS.readFile(mask_path);
     const blob = new Blob([resultBytes], { type: "application/octet-stream" });
-    const file = new File([blob], `mask_${Date.now()}.nii`);
+    mask_file = new File([blob], `mask_${Date.now()}.nii`);
 
     
-    await nv.loadFromFile(file);
+    await nv.loadFromFile(mask_file);
       console.log(nv.volumes.length)
       nv.removeVolumeByIndex(0);
    
-      threshold = parseInt(values[0]);
+      
       thresholdValue.textContent = threshold.toFixed(0);
 
   } catch (err) {
@@ -212,36 +248,146 @@
     });
 
   }
- //run masking
+
+
+
+
+  function switchVolume(file) {
+  if (nv.volumes.length > 0) {
+    nv.removeVolumeByIndex(0);
+  }
+  nv.loadFromFile(file).then(() => {
+    setupContrast(nv.volumes[0]);
+  }).catch(err => {
+    console.error(err);
+    out.textContent = "Error loading volume: " + err.message;
+  });
+}
+
+document.getElementById("showMask").addEventListener("click", () => {
+  switchVolume(mask_file);
+});
+
+document.getElementById("showUnwrapped").addEventListener("click", () => {
+  switchVolume(unwrapped_file);
+});
+
+document.getElementById("showBgRemoved").addEventListener("click", () => {
+  switchVolume(bgremoved_file);
+});
+
+document.getElementById("showDipoleInversed").addEventListener("click", () => {
+  switchVolume(final_file);
+});
+
+document.getElementById("showMagnitude").addEventListener("click", () => {
+  switchVolume(magnitude_file);
+});
+
+document.getElementById("showPhase").addEventListener("click", () => {
+  switchVolume(phase_file);
+});
+
+
+
+
+
+
+
+
+
+
+
  
- let contrastEnabled = false;
- 
+let mask_path;
+let mask_file;
+
+let magnitude_path = "magnitude.nii";
+let magnitude_file;
+
+let phase_path = "phase.nii";
+let phase_file;
+
+let unwrapped_path;
+let unwrapped_file;
+
+let bgremoved_path;
+let bgremoved_file;
+
+let final_path;
+let final_file;
 
 
 
+
+
+ document.getElementById("vis_magnitude").addEventListener("click", async () => {
+
+    magnitude_file = document.getElementById("magnitude").files[0];
+
+  if (!magnitude_file) {
+    out.textContent = "Please upload magnitude image.";
+    return;
+  }
+
+
+    await saveToFS(magnitude_file, magnitude_path);
+
+
+    if (nv.volumes.length > 0) {
+  nv.removeVolumeByIndex(0);  
+}
+    await nv.loadFromFile(magnitude_file); 
+    setupContrast(nv.volumes[0]);
+
+ })
+
+  document.getElementById("vis_phase").addEventListener("click", async () => {
+
+  
+  phase_file = document.getElementById("phase").files[0];
+  if (!phase_file) {
+    out.textContent = "Please upload phase image.";
+    return;
+  }
+
+    await saveToFS(phase_file, phase_path);
+
+    if (nv.volumes.length > 0) {
+  nv.removeVolumeByIndex(0);  
+}
+    await nv.loadFromFile(phase_file); 
+    setupContrast(nv.volumes[0]);
+ })
+
+
+
+    //run masking
+
+const out = document.getElementById("output");
 document.getElementById("run").addEventListener("click", async () => {
-  const out = document.getElementById("output");
-  const magnitude = document.getElementById("magnitude").files[0];
-  const phase = document.getElementById("phase").files[0];
+  
+  magnitude_file = document.getElementById("magnitude").files[0];
+  phase_file = document.getElementById("phase").files[0];
   if (!magnitude || !phase) {
     out.textContent = "Please upload both magnitude and phase images.";
     return;
   }
 
 
-  await saveToFS(magnitude, "magnitude.nii");
-  await saveToFS(phase, "phase.nii");
+    await saveToFS(magnitude_file, magnitude_path);
+    await saveToFS(phase_file, phase_path);
 
   try {
     out.textContent = "Creating initial mask...";
     const runMasking = pyodide.globals.get("run_masking");
-    const resultPath = runMasking("magnitude.nii", threshold);
+    mask_path = runMasking(magnitude_path, threshold);
 
-    const resultBytes = pyodide.FS.readFile(resultPath);
+    const resultBytes = pyodide.FS.readFile(mask_path);
     
     const blob = new Blob([resultBytes], { type: "application/octet-stream" });
-    pyodide.FS.unlink(resultPath);
-    const file = new File([blob], "masking_output.nii");
+
+    mask_file = new File([blob], "mask.nii");
 
     out.textContent = "Displaying result in viewer...";
 
@@ -249,8 +395,19 @@ document.getElementById("run").addEventListener("click", async () => {
     if (nv.volumes.length > 0) {
   nv.removeVolumeByIndex(0);  
 }
-    await nv.loadFromFile(file); 
+    await nv.loadFromFile(mask_file); 
     setupThreshold();
+
+    const visMagnitudeButton = document.getElementById("vis_magnitude");
+    const visPhaseButton = document.getElementById("vis_phase");
+    const contrastControls = document.getElementById("contrastControls");
+    const runButton = document.getElementById("run");
+    visMagnitudeButton.hidden = true;
+    visPhaseButton.hidden = true;
+    contrastControls.hidden = true;
+    runButton.hidden = true;
+
+
     out.textContent = "Masking result loaded. Adjust threshold as needed.";
 
     const useMaskButton = document.getElementById("useMask");
@@ -261,6 +418,87 @@ document.getElementById("run").addEventListener("click", async () => {
     out.textContent = "Error: " + err.message;
   }
 });
+
+
+
+
+//run usemask 
+document.getElementById("useMask").addEventListener("click", async () => {
+
+  const useMaskButton = document.getElementById("useMask");
+  useMaskButton.hidden = true;
+
+
+  const magnitude = document.getElementById("magnitude").files[0];
+  const phase = document.getElementById("phase").files[0];
+
+
+  try {
+    out.textContent = "Phase unwrapping...";
+
+    //run phase unwrapping
+    const runUnwrap = pyodide.globals.get("run_unwrap");
+    unwrapped_path = runUnwrap(phase_path);
+
+    let resultBytes = pyodide.FS.readFile(unwrapped_path);
+    
+    let blob = new Blob([resultBytes], { type: "application/octet-stream" });
+  
+    unwrapped_file = new File([blob], "unwrapped.nii");
+
+    //run background removal
+    const runBgRemoval = pyodide.globals.get("run_bgremoval");
+    bgremoved_path = runBgRemoval(unwrapped_path, mask_path);
+
+    resultBytes = pyodide.FS.readFile(bgremoved_path);
+    
+    blob = new Blob([resultBytes], { type: "application/octet-stream" });
+
+    bgremoved_file = new File([blob], "bgremoved.nii");
+
+    //run dipole inversion
+    const runInversion = pyodide.globals.get("run_rts");
+    final_path = runInversion(bgremoved_path, mask_path);
+
+    resultBytes = pyodide.FS.readFile(final_path);
+    
+    blob = new Blob([resultBytes], { type: "application/octet-stream" });
+ 
+    final_file = new File([blob], "final_output.nii");
+
+
+
+
+
+    const thresholdControls = document.getElementById("thresholdControls");
+    thresholdControls.hidden = true;
+
+    out.textContent = "Displaying result in viewer...";
+
+    //make sure to remove the previous volume
+    if (nv.volumes.length > 0) {
+  nv.removeVolumeByIndex(0);  
+}
+    await nv.loadFromFile(final_file); 
+    setupContrast(nv.volumes[0]);
+    out.textContent = "QSM result loaded.";
+
+    const contrastControls = document.getElementById("contrastControls");
+    contrastControls.hidden = false;
+
+    const stageButtons = document.getElementById("stage-buttons");
+    stageButtons.hidden = false;
+
+
+  } catch (err) {
+    console.error(err);
+    out.textContent = "Error: " + err.message;
+  }
+  
+
+
+
+  });
 
 
     initPyodide();

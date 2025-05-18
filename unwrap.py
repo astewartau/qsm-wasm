@@ -57,6 +57,7 @@ def dct_laplacian_inverse(x):
 def run_unwrap(file_path):
 
     start_time = time.time()
+    print("Unwrapping started...")
 
 
     #Load the files (given the file path)

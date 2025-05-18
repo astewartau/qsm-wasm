@@ -33,16 +33,36 @@
     transition: background-color 0.3s ease;
   }
 
+
   
 
   #run:hover {
     background-color: #007acc;
   }
 
+  .vis {
+  
+    padding: 0.5rem 0.8rem;
+    font-size: 1rem;
+    font-weight: bold;
+    background-color: #848484;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+  }
+
+  .vis:hover {
+    background-color: #6d6d6d;
+  }
+
 .use-mask-wrapper {
   text-align: center;
-  margin-top: 80px;
-  padding-top: 80px;
+  margin-top: 20px;
+  padding-bottom: 50px;
+
+
 }
 
 #useMask {
@@ -59,4 +79,38 @@
 #useMask:hover {
   background-color: #1565c0;
   transform: translateY(-1px);
+}
+
+#stage-buttons {
+
+  justify-content: center;
+  gap: 16px;
+  margin-top: 10px;
+
+}
+
+#stage-buttons button {
+  padding: 10px 15px;
+  font-size: 14px;
+  border-radius: 6px;
+  border: none;
+  background-color: #007bff;
+  color: white;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  margin: 3px;
+}
+
+#stage-buttons button:hover {
+  background-color: #0056b3;
+}
+
+
+#phaseLabel{
+  margin-top: 0px;
+
+}
+
+#phase{
+  margin-bottom:30px;
 }

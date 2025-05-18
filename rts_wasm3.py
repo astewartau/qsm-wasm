@@ -1,6 +1,6 @@
 import numpy as np
 import nibabel as nib
-
+import time
 
 
 def dipole_kernel(shape, vsz, bdir=(0, 0, 1)):

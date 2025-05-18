@@ -1,5 +1,6 @@
 import numpy as np
 import nibabel as nib
+import time
 
 def dipole_kernel(shape, vsz, bdir=(0, 0, 1)):
     nx, ny, nz = shape
@@ -25,6 +26,11 @@ def dipole_kernel(shape, vsz, bdir=(0, 0, 1)):
     return D.astype(np.complex128)
 
 def run_rts(fieldmap_path, mask_path, output_path="rts_output.nii", vsz=None, bdir=(0, 0, 1), delta=0.15):
+
+
+    start_time = time.time()
+    print("Dipole inversion started...")
+
 
     #load files
     field_nii = nib.load(fieldmap_path)
@@ -58,5 +64,9 @@ def run_rts(fieldmap_path, mask_path, output_path="rts_output.nii", vsz=None, bd
     chi_out = -chi * mask
     nii_out = nib.Nifti1Image(chi_out.astype(np.float32), affine)
     nib.save(nii_out, output_path)
+
+
+    elapsed = time.time() - start_time
+    print(f"Dipole inversion completed in {elapsed:.3f} seconds")
 
     return output_path

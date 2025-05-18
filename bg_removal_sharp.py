@@ -2,6 +2,7 @@ import numpy as np
 import nibabel as nib
 from scipy.ndimage import binary_dilation, binary_fill_holes, gaussian_filter
 from scipy.special import gamma, jn
+import time
 
 
 def getFourierDomain(x):
@@ -81,6 +82,12 @@ def sharp_background_removal(img, mask, FOV, sphereDiam=5.0, threshold=0.05):
 
 
 def run_bgremoval(data_path, mask_path, output_path="rts_output.nii"):
+
+    
+    start_time = time.time()
+    print("Background removal started...")
+
+
     img_nii = nib.load(data_path)
     mask_nii = nib.load(mask_path)
 
@@ -95,5 +102,9 @@ def run_bgremoval(data_path, mask_path, output_path="rts_output.nii"):
 
     out_img = nib.Nifti1Image(result.astype(np.float32), affine=img_nii.affine)
     nib.save(out_img, output_path)
+
+
+    elapsed = time.time() - start_time
+    print(f"Background removal completed in {elapsed:.3f} seconds")
 
     return output_path

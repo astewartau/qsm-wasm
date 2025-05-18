@@ -1,12 +1,14 @@
 import numpy as np
 import nibabel as nib
-import time
+#import time
 from scipy.ndimage import (
     gaussian_filter, label, binary_fill_holes,
     binary_erosion, binary_dilation, generate_binary_structure
 )
 
 def run_masking(fieldmap_path, treshold = 80):
+
+
     img = nib.load(fieldmap_path)
     data = img.get_fdata()
 
@@ -40,8 +42,14 @@ def run_masking(fieldmap_path, treshold = 80):
 
     # Finalize and save
     out_img = nib.Nifti1Image(mask.astype(np.uint8), affine=img.affine)
-    unique_id = int(time.time() * 1000)
-    out_path = f"rts_output_{unique_id}.nii"
-    print(unique_id)
+
+    out_path = "mask.nii"
+  
     nib.save(out_img, out_path)
+
+
+
+
+
+
     return out_path
