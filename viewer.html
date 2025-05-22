@@ -70,6 +70,9 @@
     async function addVolumeFromFiles(f) {
           console.log('attempting to open ', f[0].name)
           console.log('details', f[0])
+            if (nv.volumes.length > 0) {
+    nv.removeVolumeByIndex(0);
+  }
           nv.loadFromFile(f[0])
       }
     openBtn.onclick = function () {
