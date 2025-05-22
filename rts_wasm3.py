@@ -1,111 +1,183 @@
+# Rapid two-step dipole inversion with sparsity priors (Python translation)
+# Based on: Kames et al. (2018), Neuroimage
+
 import numpy as np
+from numpy.fft import fftn, ifftn
+from scipy.sparse.linalg import LinearOperator, lsmr
 import nibabel as nib
-import time
 
 
-def dipole_kernel(shape, vsz, bdir=(0, 0, 1)):
-    nx, ny, nz = shape
-    dx, dy, dz = vsz
-    FOVx = nx * dx
-    FOVy = ny * dy
-    FOVz = nz * dz
+def run_rts(f, mask, vsz=None,
+        pad=(0, 0, 0),
+        Dkernel='k',
+        bdir=(0, 0, 1),
+        lstol=4,
+        delta=0.15,
+        mu=1e5,
+        rho=10,
+        tol=1e-2,
+        maxit=20,
+        verbose=False,
+        tau=0.7,
+        gamma=5):
+    affine = nib.load(f).affine
+    f = nib.load(f).get_fdata()
+    mask = nib.load(mask).get_fdata()
 
-    kx = np.arange(-np.ceil((nx - 1) / 2), np.floor((nx - 1) / 2) + 1) / FOVx
-    ky = np.arange(-np.ceil((ny - 1) / 2), np.floor((ny - 1) / 2) + 1) / FOVy
-    kz = np.arange(-np.ceil((nz - 1) / 2), np.floor((nz - 1) / 2) + 1) / FOVz
-    KX, KY, KZ = np.meshgrid(kx, ky, kz, indexing='ij')
-
-    bdir = np.asarray(bdir, dtype=np.float64)
-    bdir /= np.linalg.norm(bdir)
-
-    k_dot_b = KX * bdir[0] + KY * bdir[1] + KZ * bdir[2]
-    k2 = KX**2 + KY**2 + KZ**2
-
-    D = (k_dot_b**2 / (k2 + 1e-8)) - 1/3
-    D = np.fft.ifftshift(D)
-    D[0, 0, 0] = 0
-    return D.astype(np.complex128)
-
-def grad(x, voxel_size):
-    dx = np.diff(x, axis=0, append=x[-1:,:,:]) / voxel_size[0]
-    dy = np.diff(x, axis=1, append=x[:,-1:,:]) / voxel_size[1]
-    dz = np.diff(x, axis=2, append=x[:,:,-1:]) / voxel_size[2]
-    return dx, dy, dz
-
-def div(dx, dy, dz, voxel_size):
-    dxx = np.diff(dx, axis=0, prepend=dx[0:1,:,:]) / voxel_size[0]
-    dyy = np.diff(dy, axis=1, prepend=dy[:,0:1,:]) / voxel_size[1]
-    dzz = np.diff(dz, axis=2, prepend=dz[:,:,0:1]) / voxel_size[2]
-    return dxx + dyy + dzz
-
-def soft_shrink(x, thresh):
-    return np.sign(x) * np.maximum(np.abs(x) - thresh, 0)
-
-def run_rts_nib(fieldmap_path, mask_path, output_path="rts_output.nii", vsz=None, bdir=(0, 0, 1), delta=0.15,
-                mu=1e5, rho=10, tol=1e-2, maxit=20):
-
-    # Load files
-    field_nii = nib.load(fieldmap_path)
-    mask_nii = nib.load(mask_path)
-
-    fieldmap = field_nii.get_fdata()
-    mask = mask_nii.get_fdata()
-    affine = field_nii.affine
+    if f.ndim not in (3, 4):
+        raise ValueError(f"arrays must be 3d or 4d, got {f.ndim}d")
 
     if vsz is None:
-        vsz = field_nii.header.get_zooms()[:3]
+        vsz = (1.0, 1.0, 1.0)  # default voxel size
 
-    shape = fieldmap.shape
-
-    # Create dipole kernel
-    D = dipole_kernel(shape, vsz, bdir)
-
-    #Well-conditioned inversion (simple division)
-    F_field = np.fft.fftn(fieldmap)
-    D_inv = np.zeros_like(D)
-    D_inv[np.abs(D) > delta] = 1.0 / D[np.abs(D) > delta]
-    chi_k = F_field * D_inv
-    chi = np.fft.ifftn(chi_k).real
+    x = np.zeros_like(f)
+    return _rts_(x, f, mask, vsz, pad, Dkernel, bdir, lstol, delta,
+                mu, rho, tol, maxit, verbose, tau, gamma,affine )
 
 
-    #NOW SECOND STEP OF RTS
+def _grad3d(x, vsz):
+    dx = np.zeros_like(x)
+    dy = np.zeros_like(x)
+    dz = np.zeros_like(x)
+    dx[:-1, :, :] = (x[1:, :, :] - x[:-1, :, :]) / vsz[0]
+    dy[:, :-1, :] = (x[:, 1:, :] - x[:, :-1, :]) / vsz[1]
+    dz[:, :, :-1] = (x[:, :, 1:] - x[:, :, :-1]) / vsz[2]
+    return dx, dy, dz
 
-    #Compute residual
-    F_chi = np.fft.fftn(chi)
-    field_simulated = np.fft.ifftn(D * F_chi).real
-    residual = (fieldmap - field_simulated) * mask
 
-    #ADMM solve for residual (TV regularization)
-    chi_residual = np.zeros_like(residual)
-    px = np.zeros_like(residual)
-    py = np.zeros_like(residual)
-    pz = np.zeros_like(residual)
+def _grad3d_adj(dx, dy, dz, vsz):
+    gx = np.zeros_like(dx)
+    gy = np.zeros_like(dy)
+    gz = np.zeros_like(dz)
+    gx[1:, :, :] = (dx[1:, :, :] - dx[:-1, :, :]) / vsz[0]
+    gy[:, 1:, :] = (dy[:, 1:, :] - dy[:, :-1, :]) / vsz[1]
+    gz[:, :, 1:] = (dz[:, :, 1:] - dz[:, :, :-1]) / vsz[2]
+    return gx + gy + gz
 
-    for it in range(maxit):
-        dx, dy, dz = grad(chi_residual, vsz)
-        dx = soft_shrink(dx + px, 1/rho)
-        dy = soft_shrink(dy + py, 1/rho)
-        dz = soft_shrink(dz + pz, 1/rho)
 
-        px += grad(chi_residual, vsz)[0] - dx
-        py += grad(chi_residual, vsz)[1] - dy
-        pz += grad(chi_residual, vsz)[2] - dz
+def _shrink(p, lambd):
+    mag = np.abs(p)
+    return np.where(mag > lambd, p - lambd * np.sign(p), 0.0)
 
-        div_p = div(dx - px, dy - py, dz - pz, vsz)
 
-        rhs = residual + (mu/rho) * div_p
-        rhs_k = np.fft.fftn(rhs)
-        denom = D * np.conj(D) + mu/rho
-        chi_residual = np.real(np.fft.ifftn(rhs_k / (denom + 1e-8))) * mask
+def _rts_(x, f, mask, vsz, pad, Dkernel, bdir, lstol, delta,
+          mu, rho, tol, maxit, verbose, tau, gamma, affine):
 
-        if np.linalg.norm(div_p) / (np.linalg.norm(chi_residual) + 1e-8) < tol:
-            break
+    T = f.dtype.type
+    zeroT = T(0)
+    eps = T(tol)
+    i_gamma = T(1) / gamma
+    delta, mu, rho, gamma, tau = map(T, (delta, mu, rho, gamma, tau))
 
-    # Step 4: Combine
-    chi_final = (chi + chi_residual) * mask
+    sz0 = mask.shape
+    sz = tuple(np.array(sz0) + np.array(pad))
+    sz_ = sz
 
-    # Save result
-    nii_out = nib.Nifti1Image(chi_final.astype(np.float32), affine)
-    nib.save(nii_out, output_path)
+    def padfast(x, shape):
+        pad_width = [(0, s - x.shape[i]) for i, s in enumerate(shape)]
+        return np.pad(x, pad_width, mode='constant')
 
-    return output_path
+    def unpad(x, shape):
+        slices = tuple(slice(0, s) for s in shape)
+        return x[slices]
+
+    D = np.ones(sz_, dtype=T)
+    L = np.ones(sz_, dtype=T)
+    M = np.where(np.abs(D) > delta, mu, zeroT)
+    iA = np.zeros(sz_, dtype=T)
+
+    n_echos = f.shape[3] if f.ndim == 4 else 1
+
+    for t in range(n_echos):
+        if verbose and n_echos > 1:
+            print(f"Echo: {t + 1}/{n_echos}")
+
+        ft = f[..., t] if f.ndim == 4 else f
+        xp = padfast(ft, sz)
+        m = padfast(mask.astype(T), sz)
+
+        x0 = np.empty_like(xp)
+
+        def matvec(v):
+            return D.flatten() * v
+
+        A = LinearOperator((D.size, D.size), matvec=matvec, rmatvec=matvec, dtype=np.complex64)
+
+        B_hat = fftn(xp)
+        res = lsmr(A, B_hat.flatten(), atol=0, btol=0, maxiter=lstol)
+        X_hat = res[0].reshape(sz)
+        xp = ifftn(X_hat, s=sz).real
+        xp *= m
+
+        X_hat = fftn(xp)
+
+        F_hat = np.zeros_like(X_hat)
+        for idx in np.ndindex(sz_):
+            a = rho * L[idx] + M[idx]
+            if a != 0:
+                ia = 1. / a
+                F_hat[idx] = ia * M[idx] * X_hat[idx]
+                iA[idx] = rho * ia
+
+        px = np.zeros_like(xp)
+        py = np.zeros_like(xp)
+        pz = np.zeros_like(xp)
+
+        vx = np.zeros_like(xp)
+        vy = np.zeros_like(xp)
+        vz = np.zeros_like(xp)
+
+        nr = np.finfo(T).max
+
+        for i in range(maxit):
+            x0[...] = xp.copy()
+
+            dx, dy, dz = _grad3d(xp, vsz)
+
+            yx = _shrink(dx + px, 1. / rho)
+            yy = _shrink(dy + py, 1. / rho)
+            yz = _shrink(dz + pz, 1. / rho)
+
+            px += dx - yx
+            py += dy - yy
+            pz += dz - yz
+
+            vx = yx - px
+            vy = yy - py
+            vz = yz - pz
+
+            g_adj = _grad3d_adj(vx, vy, vz, vsz)
+
+            X_hat = fftn(g_adj)
+            X_hat = iA * X_hat + F_hat
+            xp = ifftn(X_hat, s=sz)
+
+            ndx = np.linalg.norm(xp - x0)
+            nx = np.linalg.norm(xp)
+
+            if verbose:
+                print(f"{i + 1}/{maxit}\t    {ndx / nx:.4e}")
+
+            if ndx < eps * nx:
+                break
+
+            nr0 = nr
+            res_norm = np.linalg.norm(np.stack([dx - yx, dy - yy, dz - yz]))
+            nr = res_norm
+
+            if nr > tau * nr0:
+                rho_old = rho
+                rho *= gamma
+                iA *= rho / rho_old
+                px *= i_gamma
+                py *= i_gamma
+                pz *= i_gamma
+
+        if f.ndim == 4:
+            x[..., t] = unpad(xp, sz0)
+        else:
+            x[...] = unpad(xp, sz0)
+
+    
+    out_img = nib.Nifti1Image(x.astype(np.float32), affine)
+    nib.save(out_img, "output.nii")

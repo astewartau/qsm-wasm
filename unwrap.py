@@ -66,6 +66,9 @@ def run_unwrap(file_path):
 
     affine = field_nii.affine
 
+    print("Min:", np.min(phi_wrapped))
+    print("Max:", np.max(phi_wrapped))
+
 
 
 
@@ -83,6 +86,10 @@ def run_unwrap(file_path):
 
     # phase correction
     phi_unwrapped = phi_wrapped + 2 * np.pi * k
+
+
+    print("Min:", np.min(phi_unwrapped))
+    print("Max:", np.max(phi_unwrapped))
 
     nii_out = nib.Nifti1Image(phi_unwrapped.astype(np.float32), affine)
     nib.save(nii_out, "unwrapped.nii")

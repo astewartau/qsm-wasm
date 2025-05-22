@@ -1,12 +1,16 @@
 import Pkg
 Pkg.activate("env_julia")
 
-using QSM
+#using QSM
 using NIfTI
+#using MriResearchTools
+using ROMEO
 
 # Load your background-corrected field map (units: ppm)
-fl = NIfTI.niread("./test_algo/unwrapped.nii")
+fl = NIfTI.niread("./phase.nii").raw
 mask = NIfTI.niread("./mask.nii").raw  .> 0.5# Convert to Bool if needed
+
+mag = NIfTI.niread("./magnitude.nii").raw
 
 
 
@@ -15,8 +19,8 @@ vsz  = (1.0, 1.0, 1.0)          # voxel size in mm
 bdir = (0.0, 0.0, 1.0)          # direction of B0 field (usually z-axis)
 
 #x = rts(fl, mask, vsz, bdir=bdir)
-x = sharp(fl, mask, vsz, r=6.0)
-
-volume = NIfTI.NIVolume(fl.header, x[1])
+x = unwrapped = unwrap(fl,mag=mag)
+volume = NIfTI.NIVolume(fl.header, x)
+#volume = NIfTI.NIVolume(fl.header, x[1]) #->for vsharp
 # Save result
-NIfTI.niwrite("julia_sharp6.nii", volume)
+NIfTI.niwrite("./romeo.nii", volume)
