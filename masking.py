@@ -16,7 +16,7 @@ def run_masking(fieldmap_path):
 
     # Create new NIfTI image with the same affine as input
     out_img = nib.Nifti1Image(mask, affine=img.affine)
-    out_path = "rts_output.nii"
+    out_path = "mask.nii"
     nib.save(out_img, out_path)
 
     return out_path  # ✅ now JS can load the file from Pyodide FS

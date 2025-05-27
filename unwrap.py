@@ -54,7 +54,7 @@ def dct_laplacian_inverse(x):
     pq[pq == 0] = np.inf  # avoid divide by zero
     return - np.prod(shape) / (2 * np.pi)**x.ndim * idctn(dctn(x, type=2, norm='ortho') / pq, type=2, norm='ortho')
 
-def run_unwrap(file_path):
+def run_unwrap(file_path,echo_time, mag_field):
 
     start_time = time.time()
     print("Unwrapping started...")
@@ -65,9 +65,6 @@ def run_unwrap(file_path):
     phi_wrapped = field_nii.get_fdata()
 
     affine = field_nii.affine
-
-    print("Min:", np.min(phi_wrapped))
-    print("Max:", np.max(phi_wrapped))
 
 
 
@@ -88,13 +85,26 @@ def run_unwrap(file_path):
     phi_unwrapped = phi_wrapped + 2 * np.pi * k
 
 
-    print("Min:", np.min(phi_unwrapped))
-    print("Max:", np.max(phi_unwrapped))
 
-    nii_out = nib.Nifti1Image(phi_unwrapped.astype(np.float32), affine)
+
+
+
+    #Normalize
+    Φ_acc = phi_unwrapped
+    γ = 42.576e6
+    scale_factor = 1e6/(2*np.pi)
+    Φ_norm = Φ_acc / (echo_time * γ * mag_field) * scale_factor
+
+
+
+    nii_out = nib.Nifti1Image(Φ_norm.astype(np.float32), affine)
     nib.save(nii_out, "unwrapped.nii")
 
     elapsed = time.time() - start_time
     print(f"Unwrapping completed in {elapsed:.3f} seconds")
+
+
+
+
 
     return "unwrapped.nii"

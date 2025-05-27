@@ -84,11 +84,11 @@ def run_rts(fieldmap_path, mask_path, output_path="rts_lsmr_output.nii",
 
     # Step 6: Fill k-space with solution in well-conditioned region
     chi_k = np.zeros_like(F_field, dtype=np.complex128)
-    chi_k[well_mask] = x_solution
+    chi_k[mask] = x_solution
 
     # Step 7: Inverse FFT to get susceptibility map
     chi = ifftn(chi_k).real
-    chi_masked = -chi * mask  # optional masking in image space
+    chi_masked = -chi * (mask > 0) 
 
     # Step 8: Save result
     out_img = nib.Nifti1Image(chi_masked.astype(np.float32), affine)

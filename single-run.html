@@ -13,7 +13,7 @@
   </style>
 </head>
 <body>
-  <h2>RTS QSM Inversion</h2>
+  <h2>Test a QSM algorithm</h2>
 
   <label>Upload Fieldmap (.nii or .nii.gz):</label>
   <input type="file" id="fieldmap" accept=".nii,.nii.gz">
@@ -41,7 +41,7 @@
 
       await pyodide.loadPackage("numpy");
       await pyodide.loadPackage("scipy");
-      const pythonCode = await fetch("unwrap2.py").then(r => r.text());
+      const pythonCode = await fetch("unwrap.py").then(r => r.text());
       await pyodide.runPythonAsync(pythonCode);
 
       document.getElementById("output").textContent = "RTS module loaded.";
@@ -72,7 +72,7 @@
         //const resultPath = runRTS("fieldmap.nii", "mask.nii");
 
         const runUnwrap = pyodide.globals.get("run_unwrap");
-        const resultPath = runUnwrap("fieldmap.nii");
+        const resultPath = runUnwrap("fieldmap.nii", 0.004, 7);
 
 
 

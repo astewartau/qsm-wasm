@@ -63,7 +63,7 @@ plt.show()
 
 """
 
-
+"""
 # --- RMSE calculation
 
 #unwrapped_img = nib.load('./test_algo/unwrapped.nii')
@@ -114,10 +114,10 @@ plt.text(0.95, 0.95, textstr, transform=plt.gca().transAxes,
          bbox=dict(facecolor='white', alpha=0.8, boxstyle='round'))
 
 plt.show()
-
+"""
 
 # --- Showing the voxel-wise residual error across the 3 axes for middle slices
-"""
+
 
 unwrapped_img = nib.load('./unwrapped_echo1.nii')
 reference_img = nib.load('./reference/fieldmap.nii')
@@ -161,4 +161,4 @@ plt.tight_layout()
 plt.colorbar(axes[0].images[0], ax=axes, orientation='vertical', label='Phase Error (radians)')
 plt.suptitle('Voxel-wise Residual Error Centered (Middle Slices)', fontsize=14)
 plt.show()
-"""
+

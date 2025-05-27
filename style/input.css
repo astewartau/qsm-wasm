@@ -112,5 +112,100 @@
 }
 
 #phase{
-  margin-bottom:30px;
+  margin-bottom:10px;
+}
+
+.download-button {
+  background-color: #28a745 !important;
+  color: white;
+  font-weight: bold;
+  padding: 8px 16px;
+  border: none;
+}
+
+.download-button:hover {
+  background-color: #18722b;
+}
+
+#download-wrapper{
+  display: flex;
+  justify-content: flex-start;
+  margin: -35px 0 0 0;
+}
+.save-button {
+  background-color: #fd7e14 !important; /* Bootstrap Orange */
+  color: white;
+  font-weight: bold;
+  padding: 8px 16px;
+  border: none;
+}
+
+.save-button:hover {
+  background-color: #e36a0b;
+}
+
+
+#progressContainer {
+
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 400px;
+  margin: 20px auto;
+  text-align: center;
+  margin-top:-50px;
+}
+
+
+
+#progressLabel {
+  margin-bottom: 0px;
+  font-size: 14px;
+}
+
+#progressBar {
+  height: 10px;
+  width: 100%;
+  margin: auto;
+  margin-bottom: 20px;
+}
+
+.scan-params {
+
+  text-align: center;
+}
+
+
+
+.scan-row {
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+  
+  flex-wrap: wrap;
+}
+
+
+.json-upload, .scan-row label {
+  display: flex;
+  flex-direction: column;
+
+  align-items: center;
+}
+
+.scan-row label{
+  font-size:0.85rem;
+
+}
+.scan-row input[type="number"],
+.json-upload input[type="file"] {
+
+  padding: 4px;
+  min-width: 160px;
+  text-align: center;
+   margin-bottom: 0; 
+}
+
+.json-upload {
+  margin-bottom: 0rem; /* or try 0 if you want it tight */
 }

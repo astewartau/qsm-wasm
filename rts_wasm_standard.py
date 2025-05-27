@@ -41,6 +41,9 @@ def run_rts(fieldmap_path, mask_path, output_path="rts_output.nii", vsz=None, bd
     #extract mask
     mask = mask_nii.get_fdata()
 
+
+    print("INPUT TO RTS - min: ", np.min(fieldmap),"max: ", np.max(fieldmap))
+
     affine = field_nii.affine
     if vsz is None:
         vsz = field_nii.header.get_zooms()[:3]

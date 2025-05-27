@@ -60,12 +60,11 @@ def run_masking(fieldmap_path, treshold = 80):
 
     # -> Binary mask with values 0 and 1
 
-    #scale mask to [0, 255] 
-    mask_scaled = (mask * 255).astype(np.uint8)
 
 
 
-    out_img = nib.Nifti1Image(mask_scaled, affine=img.affine)
+
+    out_img = nib.Nifti1Image(mask.astype(np.uint8), affine=img.affine)
     out_path = "mask.nii"
     nib.save(out_img, out_path)
 

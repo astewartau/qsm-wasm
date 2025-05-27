@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="./style/input.css">
   <script src="https://cdn.jsdelivr.net/pyodide/v0.27.1/full/pyodide.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/14.6.4/nouislider.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/progressbar.js"></script>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/14.6.4/nouislider.min.css" rel="stylesheet"/>
 
   
@@ -18,35 +19,79 @@
 <div class="upload-wrapper">
 
 
-  <label for="magnitude">Upload <b>magnitude image</b> (.nii or .nii.gz):</label>
+  <label for="magnitude">Upload <b>magnitude image</b> (.nii):</label>
   <input type="file" id="magnitude" accept=".nii,.nii.gz">
 
-  <label id="phaseLabel" for="phase">Upload <b>phase image</b> (.nii or .nii.gz):</label>
+  <label id="phaseLabel" for="phase">Upload <b>phase image</b> (.nii):</label>
   <input type="file" id="phase" accept=".nii,.nii.gz">
+
+  <div class="scan-params">
+  <label class="json-upload">
+    Load Settings (.json):
+    <input type="file" id="settingsFile" accept=".json" />
+  </label>
+
+  <div class="scan-row">
+    <label>
+      Echo Time (s):
+      <input type="number" id="echoTime" step="0.0001" min="0" />
+    </label>
+    <label>
+      Magnetic Field Strength (T):
+      <input type="number" id="magField" step="0.1" min="0" />
+    </label>
+  </div>
+</div>
+
+
+
+
+<div style="margin-top:2rem;">
   <br>
   <button id="vis_magnitude" class="vis">Visualise magnitude</button>
   <button id="vis_phase" class="vis">Visualise phase</button>
 <br>
-  <button id="run">Run QSM pipeline</button>
+</div>
+
+
+
+
+
+ 
+
+
+
+    <button id="run">Run QSM pipeline</button>
 </div>
 
   <pre id="output">Waiting...</pre>
 
       <div id="container">
-        test1
+
         <canvas id="gl1"></canvas>
         
     
         <div id="intensity">&nbsp;</div>
 
-        <div id="stage-buttons" hidden>
+
+   
+
+        <div id="stage-buttons" hidden="true">
+
+          <div id="download-wrapper">
+
+          <button id="downloadCurrent" class="download-button">⬇ Download file</button> 
+          <button id="downloadImage" class="save-button">⬇ Save screenshot</button>
+          </div>
+           
           <button id="showMagnitude">Magnitude</button>
           <button id="showPhase">Phase</button>
           <br>
           <button id="showMask">Mask</button>
-          <button id="showUnwrapped">Unwrapped</button>
-          <button id="showBgRemoved">BG Removed</button>
-          <button id="showDipoleInversed">Dipole Inversed</button>
+          <button id="showUnwrapped">Fieldmap (unwrapped)</button>
+          <button id="showBgRemoved">Local Fieldmap (bg removed)</button>
+          <button id="showDipoleInversed">Chimap</button>
+
         </div>
 
 
@@ -80,7 +125,18 @@
       
     <div class="use-mask-wrapper">
   <button id="useMask" hidden>Use Mask</button>
-</div>
+    </div>
+
+        <div id="progressContainer" hidden="true">
+
+                <p id="progressLabel" style="margin-top: 10px;"></p>
+                <div id="progressBar" style="height: 10px;"></div>
+
+        </div>
+
+
+
+
       </div>
      
 
@@ -91,6 +147,8 @@
     const nv = new niivue.Niivue({ onLocationChange: (data) => {
       document.getElementById("intensity").innerHTML = "&nbsp;&nbsp;" + data.string;
     }});
+
+
 
 
 
@@ -129,9 +187,135 @@
 
 
 
+
+
+
+
+
       document.getElementById("output").textContent = "All modules loaded.";
   
     }
+
+
+    //-- progress bar ---
+
+let  bar = new ProgressBar.Line('#progressBar', {
+  strokeWidth: 4,
+  easing: 'easeInOut',
+  duration: 300,
+  color: '#ED6A5A',
+  trailColor: '#eee',
+  trailWidth: 1,
+  from: {color: '#ED6A5A'},
+  to: {color: '#A8E6A3'},
+  svgStyle: { width: '100%', height: '100%' },
+  step: (state, bar) => {
+    bar.path.setAttribute('stroke', state.color);
+  }
+});
+
+function showProgressBar() {
+ 
+  let progressContainer = document.getElementById("progressContainer");
+  progressContainer.hidden = false;
+  bar.set(0);
+  updateProgress(10, "Phase Unwrapping..."); // had to move it here because masking blocked the UI
+
+}
+
+function updateProgress(percent, label) {
+  bar.animate(percent / 100); //Animation does not work due to blocking UI
+  updateProgressLabel(label);
+}
+
+function updateProgressLabel(text) {
+  document.getElementById("progressLabel").textContent = text;
+}
+
+function hideProgressBar() {
+  document.getElementById("progressContainer").style.display = "none";
+}
+
+    //
+
+
+    //---- Option to download the currently displayed file ----
+
+    let current_file = null;
+
+
+function downloadFile(file) {
+  const url = URL.createObjectURL(file);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = file.name; // Keeps the original filename
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById("downloadCurrent").addEventListener("click", () => {
+  if (current_file) {
+    downloadFile(current_file);
+  } else {
+    out.textContent = "No file currently displayed.";
+  }
+});
+
+//-------
+
+
+// --- Option to save current view as an image ---
+
+
+
+
+document.getElementById("downloadImage").addEventListener("click", () => {
+
+
+
+  let file_name = current_file.name.slice(0, -4) + ".png";
+  
+  nv.saveScene(file_name)
+});
+
+
+// ------
+
+
+
+
+//-- json settings upload ---
+
+
+document.getElementById("settingsFile").addEventListener("change", async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  try {
+    const text = await file.text();
+    const settings = JSON.parse(text);
+
+    if (settings.EchoTime !== undefined) {
+      document.getElementById("echoTime").value = settings.EchoTime;
+    }
+
+    if (settings.MagneticFieldStrength !== undefined) {
+      document.getElementById("magField").value = settings.MagneticFieldStrength;
+    }
+
+    out.textContent = "Settings loaded successfully.";
+  } catch (err) {
+    console.error(err);
+    out.textContent = "Error loading settings: " + err.message;
+  }
+});
+
+
+
+
+//-----END
 
     async function saveToFS(file, name) {
       const exists = pyodide.FS.analyzePath(name).exists;
@@ -152,9 +336,14 @@
 
       contrastControls.hidden = false;
 
+      let startMin = volume.cal_min;
+      let startMax = volume.cal_max;
 
-      const startMin = volume.cal_min;
-      const startMax = volume.cal_max;
+      if(current_file.name.includes("chimap")){
+        startMin = -0.1;
+        startMax = 0.1;
+      }
+
 
       if (contrastSlider.noUiSlider) {
         contrastSlider.noUiSlider.destroy();
@@ -231,11 +420,10 @@
 
     const resultBytes = pyodide.FS.readFile(mask_path);
     const blob = new Blob([resultBytes], { type: "application/octet-stream" });
-    mask_file = new File([blob], `mask_${Date.now()}.nii`);
+    mask_file = new File([blob], `mask.nii`);
 
     
     await nv.loadFromFile(mask_file);
-      console.log(nv.volumes.length)
       nv.removeVolumeByIndex(0);
    
       
@@ -252,10 +440,11 @@
 
 
 
-  function switchVolume(file) {
+ function switchVolume(file) {
   if (nv.volumes.length > 0) {
     nv.removeVolumeByIndex(0);
   }
+  current_file = file; // ✅ Set current_file to enable download
   nv.loadFromFile(file).then(() => {
     setupContrast(nv.volumes[0]);
   }).catch(err => {
@@ -425,8 +614,17 @@ document.getElementById("run").addEventListener("click", async () => {
 //run usemask 
 document.getElementById("useMask").addEventListener("click", async () => {
 
+
+
   const useMaskButton = document.getElementById("useMask");
   useMaskButton.hidden = true;
+
+   const thresholdControls = document.getElementById("thresholdControls");
+    thresholdControls.hidden = true;
+
+    showProgressBar();
+
+   await new Promise(r => setTimeout(r, 0));  // allow UI update
 
 
   const magnitude = document.getElementById("magnitude").files[0];
@@ -434,19 +632,31 @@ document.getElementById("useMask").addEventListener("click", async () => {
 
 
   try {
-    out.textContent = "Phase unwrapping...";
+
+   
+
+ 
+
+
 
     //run phase unwrapping
+ 
     const runUnwrap = pyodide.globals.get("run_unwrap");
-    unwrapped_path = runUnwrap(phase_path);
+    const echoTime = parseFloat(document.getElementById("echoTime").value);
+
+    const magField = parseFloat(document.getElementById("magField").value);
+
+    unwrapped_path = runUnwrap(phase_path,echoTime,magField);
 
     let resultBytes = pyodide.FS.readFile(unwrapped_path);
     
     let blob = new Blob([resultBytes], { type: "application/octet-stream" });
   
-    unwrapped_file = new File([blob], "unwrapped.nii");
+    unwrapped_file = new File([blob], "fieldmap.nii");
 
     //run background removal
+    updateProgress(20, "Background removal...");
+    await new Promise(r => setTimeout(r, 0));  // allow UI update
     const runBgRemoval = pyodide.globals.get("run_bgremoval");
     bgremoved_path = runBgRemoval(unwrapped_path, mask_path);
 
@@ -454,34 +664,33 @@ document.getElementById("useMask").addEventListener("click", async () => {
     
     blob = new Blob([resultBytes], { type: "application/octet-stream" });
 
-    bgremoved_file = new File([blob], "bgremoved.nii");
+    bgremoved_file = new File([blob], "fieldmap-local.nii");
 
     //run dipole inversion
+    updateProgress(80, "Dipole inversion...");
+    await new Promise(r => setTimeout(r, 0));  // allow UI update
     const runInversion = pyodide.globals.get("run_rts");
     final_path = runInversion(bgremoved_path, mask_path);
+    updateProgress(100, "QSM map complete.");
 
     resultBytes = pyodide.FS.readFile(final_path);
     
     blob = new Blob([resultBytes], { type: "application/octet-stream" });
- 
-    final_file = new File([blob], "final_output.nii");
+
+    final_file = new File([blob], "chimap.nii");
 
 
 
 
 
-    const thresholdControls = document.getElementById("thresholdControls");
-    thresholdControls.hidden = true;
+
+
 
     out.textContent = "Displaying result in viewer...";
 
-    //make sure to remove the previous volume
-    if (nv.volumes.length > 0) {
-  nv.removeVolumeByIndex(0);  
-}
-    await nv.loadFromFile(final_file); 
-    setupContrast(nv.volumes[0]);
-    out.textContent = "QSM result loaded.";
+   switchVolume(final_file);
+
+  out.textContent = "QSM result loaded.";
 
     const contrastControls = document.getElementById("contrastControls");
     contrastControls.hidden = false;
