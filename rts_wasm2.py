@@ -17,8 +17,7 @@ Try filtering out only the 0 and look at the result...
 """
 
 
-
-def dipole_kernel(shape, voxel_size, B0_dir=(0, 0, 1))
+def dipole_kernel(shape, voxel_size, B0_dir=(0, 0, 1)):
     nx, ny, nz = shape
     dx, dy, dz = voxel_size
     kx = np.fft.fftfreq(nx, d=dx)
@@ -51,11 +50,9 @@ def create_lsmr_operator(D_vals):
     n = D_vals.size
     return LinearOperator((n, n), matvec=matvec, rmatvec=rmatvec, dtype=np.complex128)
 
-# ---------------------------------------------
-# RTS Step 1: LSMR inversion on well-conditioned region
-# ---------------------------------------------
+
 def run_rts(fieldmap_path, mask_path, output_path="rts_lsmr_output.nii",
-                 delta=0.00000001, max_iter=10, bdir=(0, 0, 1)):
+                 delta=0.0001, max_iter=30, bdir=(0, 0, 1)):
     
     start_time = time.time()
     print("RTS LSMR: Starting dipole inversion...")
@@ -75,20 +72,24 @@ def run_rts(fieldmap_path, mask_path, output_path="rts_lsmr_output.nii",
     # Step 2: Forward FFT of the fieldmap
     F_field = fftn(fieldmap)
 
-    input = np.zeros_like(D)
-    input[np.abs(D) > delta] = D[np.abs(D) > delta]
+    # Step 3: Mask for well-conditioned region in k-space
+    well_mask = np.abs(D) > delta
+
+    # Step 4: Build LSMR operator for masked region
+    A_op = create_lsmr_operator(D[well_mask])
+    b = F_field[well_mask]
 
     # Step 5: Solve using LSMR with early stopping
-    result = lsmr(input, D, maxiter=max_iter)
+    result = lsmr(A_op, b, maxiter=max_iter)
     x_solution = result[0]
 
     # Step 6: Fill k-space with solution in well-conditioned region
     chi_k = np.zeros_like(F_field, dtype=np.complex128)
-    chi_k[mask] = x_solution
+    chi_k[well_mask] = x_solution
 
     # Step 7: Inverse FFT to get susceptibility map
     chi = ifftn(chi_k).real
-    chi_masked = -chi * (mask > 0) 
+    chi_masked = chi * mask  # optional masking in image space
 
     # Step 8: Save result
     out_img = nib.Nifti1Image(chi_masked.astype(np.float32), affine)

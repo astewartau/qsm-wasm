@@ -2,28 +2,35 @@ import numpy as np
 import nibabel as nib
 import time
 
+
+
+
+
 def dipole_kernel(shape, vsz, bdir=(0, 0, 1)):
+    #This function is taken from https://github.com/AlanKuurstra/pyqsm
+
     nx, ny, nz = shape
     dx, dy, dz = vsz
     FOVx = nx * dx
     FOVy = ny * dy
     FOVz = nz * dz
 
-    kx = np.arange(-np.ceil((nx - 1) / 2), np.floor((nx - 1) / 2) + 1) / FOVx
-    ky = np.arange(-np.ceil((ny - 1) / 2), np.floor((ny - 1) / 2) + 1) / FOVy
-    kz = np.arange(-np.ceil((nz - 1) / 2), np.floor((nz - 1) / 2) + 1) / FOVz
-    KX, KY, KZ = np.meshgrid(kx, ky, kz, indexing='ij')
-
-    bdir = np.asarray(bdir, dtype=np.float64)
-    bdir /= np.linalg.norm(bdir)
-
-    k_dot_b = KX * bdir[0] + KY * bdir[1] + KZ * bdir[2]
-    k2 = KX**2 + KY**2 + KZ**2
-
-    D = (k_dot_b**2 / (k2 + 1e-8)) - 1/3
-    D = np.fft.ifftshift(D)
-    D[0, 0, 0] = 0
-    return D.astype(np.complex128)
+    kx=np.arange(-np.ceil((nx-1)/2.0),np.floor((nx-1)/2.0)+1)*1.0/FOVx
+    ky=np.arange(-np.ceil((ny-1)/2.0),np.floor((ny-1)/2.0)+1)*1.0/FOVy
+    kz=np.arange(-np.ceil((nz-1)/2.0),np.floor((nz-1)/2.0)+1)*1.0/FOVz
+    
+    KX,KY,KZ=np.meshgrid(kx,ky,kz)
+    KX=KX.transpose(1,0,2)
+    KY=KY.transpose(1,0,2)
+    KZ=KZ.transpose(1,0,2)
+    
+    K2=KX**2+KY**2+KZ**2
+    
+    dipole_f=1.0/3-KZ**2/K2
+    dipole_f=np.fft.ifftshift(dipole_f) 
+    dipole_f[0,0,0]=0
+    dipole_f=dipole_f.astype('complex')
+    return dipole_f
 
 def run_rts(fieldmap_path, mask_path, output_path="rts_output.nii", vsz=None, bdir=(0, 0, 1), delta=0.15):
 
@@ -64,7 +71,7 @@ def run_rts(fieldmap_path, mask_path, output_path="rts_output.nii", vsz=None, bd
     chi_k = F_field * D_inv
     chi = np.fft.ifftn(chi_k).real
 
-    chi_out = -chi * mask
+    chi_out = chi * mask
     nii_out = nib.Nifti1Image(chi_out.astype(np.float32), affine)
     nib.save(nii_out, output_path)
 

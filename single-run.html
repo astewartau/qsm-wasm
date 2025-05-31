@@ -41,7 +41,7 @@
 
       await pyodide.loadPackage("numpy");
       await pyodide.loadPackage("scipy");
-      const pythonCode = await fetch("unwrap.py").then(r => r.text());
+      const pythonCode = await fetch("rts_wasm_standard.py").then(r => r.text());
       await pyodide.runPythonAsync(pythonCode);
 
       document.getElementById("output").textContent = "RTS module loaded.";
@@ -71,8 +71,8 @@
         //const runRTS = pyodide.globals.get("run_rts_nib");
         //const resultPath = runRTS("fieldmap.nii", "mask.nii");
 
-        const runUnwrap = pyodide.globals.get("run_unwrap");
-        const resultPath = runUnwrap("fieldmap.nii", 0.004, 7);
+        const runUnwrap = pyodide.globals.get("run_rts");
+        const resultPath = runUnwrap("fieldmap.nii", "mask.nii");
 
 
 
