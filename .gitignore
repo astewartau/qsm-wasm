@@ -1,6 +1,14 @@
-# Python environments
+# Python Virtual Environments
+venv/
+.venv/
+env/
+.env/
+ENV/
+env.bak/
+venv.bak/
+virtualenv/
+.virtualenv/
 /env_julia
-/venv
 /test_algo
 /qsm_env
 
@@ -26,6 +34,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.pyd
+*.pyo
+*.pyc
 .Python
 build/
 develop-eggs/
@@ -42,22 +53,89 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+*.manifest
+*.spec
+site-packages/
+
+# Python testing and coverage
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+.hypothesis/
+.tox/
+.nox/
+htmlcov/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# IDE and Editors
+.vs/
+*.swp
+*.swo
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
 
 # Temporary files
 *.tmp
 *.temp
 *~
-.cache/
+*.bak
+*.backup
+*.old
+*.orig
+*.rej
+
+# Compiled files
+*.com
+*.class
+*.dll
+*.exe
+*.o
+*.dylib
+
+# Archives
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
 
 # Large datasets (exclude from git but keep examples)
 *.nii
 *.nii.gz
+*.nifti
+*.hdf5
+*.h5
+*.mat
+*.npz
+*.npy
 !assets/MNI_mask.nii*
 !demo/*.nii
 
-# Logs
+# Logs and databases
 *.log
+*.sql
+*.sqlite
+*.db
 
-# Environment variables
+# Environment variables and secrets
 .env
-.env.local
+.env.*
+*.pem
+*.key
+*.cert
+*.crt
