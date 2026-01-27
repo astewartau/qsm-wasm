@@ -3,188 +3,555 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QSM-WASM - Browser-based Quantitative Susceptibility Mapping</title>
-  
-  <!-- Fonts -->
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  
-  <!-- Styles -->
-  <link rel="stylesheet" href="./css/modern-styles.css">
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/14.6.4/nouislider.min.css" rel="stylesheet">
-  
-  <!-- Scripts -->
-  <script src="https://cdn.jsdelivr.net/pyodide/v0.27.1/full/pyodide.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/14.6.4/nouislider.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/progressbar.js"></script>
-  <!-- Meta tags for better SEO and sharing -->
-  <meta name="description" content="Browser-based Quantitative Susceptibility Mapping (QSM) pipeline using WebAssembly. No installation required - run QSM processing directly in your browser.">
-  <meta name="keywords" content="QSM, Quantitative Susceptibility Mapping, MRI, WebAssembly, WASM, Browser, Medical Imaging">
-  <meta property="og:title" content="QSM-WASM - Browser QSM Processing">
-  <meta property="og:description" content="Run complete QSM pipeline in your browser with no installation required">
-  <meta property="og:type" content="website">
-</head>
+  <title>QSM-WASM | Quantitative Susceptibility Mapping</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/modern-styles.css">
 
-<body>
-  <div class="header">
-    <div class="container">
-      <h1>QSM-WASM</h1>
-      <p>Browser-based Quantitative Susceptibility Mapping using WebAssembly</p>
-    </div>
-  </div>
-
-  <div class="container">
-    <!-- File Upload Section -->
-    <section class="upload-section">
-      <h2>Input Data</h2>
-      <div class="upload-grid">
-        <div class="upload-item">
-          <label for="magnitude">Magnitude Image</label>
-          <div class="file-input">
-            <input type="file" id="magnitude" accept=".nii,.nii.gz">
-            <label for="magnitude" class="file-input-label">
-              📁 Choose magnitude file (.nii, .nii.gz)
-            </label>
-          </div>
-        </div>
-
-        <div class="upload-item">
-          <label for="phase">Phase Image</label>
-          <div class="file-input">
-            <input type="file" id="phase" accept=".nii,.nii.gz">
-            <label for="phase" class="file-input-label">
-              📁 Choose phase file (.nii, .nii.gz)
-            </label>
-          </div>
-        </div>
-
-        <div class="upload-item">
-          <label for="settingsFile">Settings (Optional)</label>
-          <div class="file-input">
-            <input type="file" id="settingsFile" accept=".json">
-            <label for="settingsFile" class="file-input-label">
-              ⚙️ Load settings (.json)
-            </label>
-          </div>
-        </div>
-      </div>
-
-      <div class="params-section">
-        <div class="param-item">
-          <label for="echoTime">Echo Time (s)</label>
-          <input type="number" id="echoTime" step="0.0001" min="0" placeholder="e.g., 0.004">
-        </div>
-        <div class="param-item">
-          <label for="magField">Magnetic Field Strength (T)</label>
-          <input type="number" id="magField" step="0.1" min="0" placeholder="e.g., 7.0">
-        </div>
-      </div>
-
-      <div class="btn-group">
-        <button id="vis_magnitude" class="btn btn-secondary">👁️ Visualize Magnitude</button>
-        <button id="vis_phase" class="btn btn-secondary">👁️ Visualize Phase</button>
-        <button id="run" class="btn btn-primary">🚀 Run QSM Pipeline</button>
-      </div>
-    </section>
-
-    <!-- Console Output -->
-    <div class="output-console" id="output">Loading NiiVue viewer...</div>
-
-    <!-- Viewer Section -->
-    <section class="viewer-section">
-      <div id="container">
-        <canvas id="gl1"></canvas>
-      </div>
-      <div id="intensity">&nbsp;</div>
-    </section>
-
-    <!-- Download Controls -->
-    <div id="download-section" class="download-section hidden">
-      <button id="downloadCurrent" class="btn btn-success">💾 Download Current File</button>
-      <button id="downloadImage" class="btn btn-warning">📸 Save Screenshot</button>
-    </div>
-
-    <!-- Stage Navigation -->
-    <div id="stage-buttons" class="stage-buttons hidden">
-      <div class="stage-item">
-        <button id="showMagnitude" class="btn btn-secondary">👁️ Magnitude</button>
-        <button id="downloadMagnitude" class="btn btn-success btn-sm">⬇️</button>
-      </div>
-      <div class="stage-item">
-        <button id="showPhase" class="btn btn-secondary">👁️ Phase</button>
-        <button id="downloadPhase" class="btn btn-success btn-sm">⬇️</button>
-      </div>
-      <div class="stage-item">
-        <button id="showMask" class="btn btn-secondary">👁️ Mask</button>
-        <button id="downloadMask" class="btn btn-success btn-sm">⬇️</button>
-      </div>
-      <div class="stage-item">
-        <button id="showUnwrapped" class="btn btn-secondary">👁️ Fieldmap</button>
-        <button id="downloadUnwrapped" class="btn btn-success btn-sm">⬇️</button>
-      </div>
-      <div class="stage-item">
-        <button id="showBgRemoved" class="btn btn-secondary">👁️ Local Fieldmap</button>
-        <button id="downloadBgRemoved" class="btn btn-success btn-sm">⬇️</button>
-      </div>
-      <div class="stage-item">
-        <button id="showDipoleInversed" class="btn btn-primary">👁️ QSM Result</button>
-        <button id="downloadDipoleInversed" class="btn btn-success btn-sm">⬇️</button>
-      </div>
-    </div>
-
-    <!-- Contrast Controls -->
-    <div id="contrastControls" class="controls-section hidden">
-      <h3>Contrast Adjustment</h3>
-      <div class="slider-container">
-        <div id="contrastSlider"></div>
-        <div class="slider-inputs">
-          <label>
-            Min Value:
-            <input type="number" id="minInput" step="0.1">
-          </label>
-          <label>
-            Max Value:
-            <input type="number" id="maxInput" step="0.1">
-          </label>
-        </div>
-      </div>
-    </div>
-
-    <!-- Threshold Controls -->
-    <div id="thresholdControls" class="controls-section hidden">
-      <h3>Masking Threshold</h3>
-      <div class="slider-container">
-        <div id="thresholdSlider"></div>
-        <div class="text-center mt-4">
-          <label>Current Threshold: <strong id="thresholdValue">75</strong>%</label>
-        </div>
-      </div>
-      <div class="btn-group">
-        <button id="useMask" class="btn btn-primary hidden">✓ Use This Mask</button>
-      </div>
-    </div>
-
-    <!-- Progress Bar -->
-    <div id="progressContainer" class="progress-container hidden">
-      <div class="progress-label" id="progressLabel">Processing...</div>
-      <div id="progressBar"></div>
-    </div>
-  </div>
-
-  <!-- Main Application Script -->
-  <script type="module" async>
-    import { Niivue, NVImage } from "https://unpkg.com/@niivue/niivue@0.57.0/dist/index.js"
-    
-    // Make Niivue and NVImage available globally for our app
+  <!-- NiiVue -->
+  <script type="module">
+    import { Niivue, NVImage } from "https://unpkg.com/@niivue/niivue@0.57.0/dist/index.js";
     window.Niivue = Niivue;
     window.NVImage = NVImage;
-    
-    console.log('Loaded Niivue:', Niivue);
-    console.log('Loaded NVImage:', NVImage);
-    
-    // Load the QSM app after NiiVue is available
-    const script = document.createElement('script');
-    script.src = './js/qsm-app.js';
-    document.head.appendChild(script);
   </script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="logo">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <h1>QSM-WASM <span>Quantitative Susceptibility Mapping</span></h1>
+      </div>
+      <div class="header-status">
+        <div class="status-indicator">
+          <div class="status-dot loading" id="pyodideStatus"></div>
+          <span id="statusText">Loading...</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Sidebar -->
+    <aside class="app-sidebar" id="sidebar">
+      <!-- File Upload Section -->
+      <section class="sidebar-section">
+        <h2 class="section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          Input Files
+        </h2>
+
+        <!-- Magnitude Files -->
+        <div class="file-upload-group">
+          <label class="file-upload-label">
+            Magnitude Images <span class="count" id="magCount"></span>
+          </label>
+          <div class="upload-group">
+            <div class="file-upload-zone file-drop" id="magnitudeDrop">
+              <input type="file" id="magnitudeFiles" accept=".nii,.nii.gz" multiple>
+              <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              <p class="upload-text file-drop-label"><span>Drop files or click</span></p>
+            </div>
+            <div class="file-list" id="magnitudeList"></div>
+          </div>
+        </div>
+
+        <!-- Phase Files -->
+        <div class="file-upload-group">
+          <label class="file-upload-label">
+            Phase Images <span class="count" id="phaseCount"></span>
+          </label>
+          <div class="upload-group">
+            <div class="file-upload-zone file-drop" id="phaseDrop">
+              <input type="file" id="phaseFiles" accept=".nii,.nii.gz" multiple>
+              <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              <p class="upload-text file-drop-label"><span>Drop files or click</span></p>
+            </div>
+            <div class="file-list" id="phaseList"></div>
+          </div>
+        </div>
+
+        <!-- JSON Files -->
+        <div class="file-upload-group">
+          <label class="file-upload-label">
+            JSON Metadata <span class="count" id="jsonCount"></span>
+          </label>
+          <div class="upload-group">
+            <div class="file-upload-zone file-drop" id="jsonDrop">
+              <input type="file" id="jsonFiles" accept=".json" multiple>
+              <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+              </svg>
+              <p class="upload-text file-drop-label"><span>Echo times (BIDS)</span></p>
+            </div>
+            <div class="file-list" id="jsonList"></div>
+          </div>
+        </div>
+
+        <!-- Preview Buttons -->
+        <div class="preview-buttons">
+          <button class="btn btn-secondary btn-sm" id="vis_magnitude">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            Mag
+          </button>
+          <button class="btn btn-secondary btn-sm" id="vis_phase">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            Phase
+          </button>
+        </div>
+      </section>
+
+      <!-- Parameters Section -->
+      <section class="sidebar-section">
+        <h2 class="section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          Parameters
+        </h2>
+
+        <div class="param-group">
+          <label class="param-label" for="magField">Field Strength</label>
+          <div class="param-inline">
+            <input type="number" id="magField" value="7.0" step="0.1" min="0.1">
+            <span class="unit">Tesla</span>
+          </div>
+        </div>
+
+        <div class="param-group">
+          <label class="param-label" for="unwrapMode">Unwrap Mode</label>
+          <select id="unwrapMode">
+            <option value="individual">Individual</option>
+            <option value="temporal">Temporal</option>
+          </select>
+        </div>
+      </section>
+
+      <!-- Mask Threshold Section -->
+      <section class="sidebar-section" id="maskSection" style="display: none;">
+        <h2 class="section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+          </svg>
+          Mask Threshold
+        </h2>
+
+        <div class="param-group">
+          <div class="threshold-header">
+            <label class="param-label" for="maskThreshold">Threshold</label>
+            <span class="threshold-value" id="thresholdValue">15%</span>
+          </div>
+          <input type="range" id="maskThreshold" min="1" max="50" value="15" class="threshold-slider">
+          <div class="threshold-info">
+            <span id="maskCoverage">-</span>
+          </div>
+        </div>
+
+        <button class="btn btn-secondary btn-sm" id="previewMask" style="width: 100%; margin-top: var(--space-sm);">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+          Preview Mask
+        </button>
+      </section>
+
+      <!-- Progress & Run Section -->
+      <section class="sidebar-section">
+        <div class="progress-container">
+          <div class="progress-header">
+            <span class="progress-title">Pipeline Progress</span>
+            <span class="progress-value" id="progressText">0%</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+          </div>
+          <div class="progress-status">
+            <span id="echoBadge">No files loaded</span>
+          </div>
+        </div>
+
+        <button class="btn btn-primary" id="run" disabled>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+          <span>Run Pipeline</span>
+        </button>
+      </section>
+
+      <!-- Results Section -->
+      <section class="sidebar-section hidden" id="stage-buttons">
+        <h2 class="section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+            <polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+          Pipeline Results
+        </h2>
+
+        <div class="stage-buttons-grid">
+          <div class="stage-item">
+            <button class="btn btn-secondary btn-sm stage-tab" id="showMagnitude">Magnitude</button>
+            <button class="btn btn-sm" id="downloadMagnitude" title="Download" disabled>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="stage-item">
+            <button class="btn btn-secondary btn-sm stage-tab" id="showPhase">Phase</button>
+            <button class="btn btn-sm" id="downloadPhase" title="Download" disabled>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="stage-item">
+            <button class="btn btn-secondary btn-sm stage-tab" id="showMask">Mask</button>
+            <button class="btn btn-sm" id="downloadMask" title="Download" disabled>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="stage-item">
+            <button class="btn btn-secondary btn-sm stage-tab" id="showB0">B0 Field</button>
+            <button class="btn btn-sm" id="downloadB0" title="Download" disabled>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="stage-item">
+            <button class="btn btn-secondary btn-sm stage-tab" id="showBgRemoved">Local Field</button>
+            <button class="btn btn-sm" id="downloadBgRemoved" title="Download" disabled>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="stage-item">
+            <button class="btn btn-secondary btn-sm stage-tab" id="showDipoleInversed">QSM</button>
+            <button class="btn btn-sm" id="downloadDipoleInversed" title="Download" disabled>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </section>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="app-main">
+      <!-- Viewer Toolbar -->
+      <div class="viewer-toolbar">
+        <div class="view-tabs">
+          <button class="view-tab active" data-view="multiplanar">3-Plane</button>
+          <button class="view-tab" data-view="axial">Axial</button>
+          <button class="view-tab" data-view="coronal">Coronal</button>
+          <button class="view-tab" data-view="sagittal">Sagittal</button>
+          <button class="view-tab" data-view="render">3D</button>
+        </div>
+
+        <div class="viewer-actions">
+          <select class="colormap-select" id="colormapSelect">
+            <option value="gray">Gray</option>
+            <option value="hot">Hot</option>
+            <option value="cool">Cool</option>
+            <option value="viridis">Viridis</option>
+            <option value="plasma">Plasma</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- NiiVue Canvas -->
+      <div class="viewer-canvas-wrapper">
+        <canvas id="gl1"></canvas>
+      </div>
+
+      <!-- Viewer Info Bar -->
+      <div class="viewer-info">
+        <span id="intensity">Upload an image to begin</span>
+      </div>
+
+      <!-- Console -->
+      <div class="console-container" id="console">
+        <div class="console-header">
+          <span class="console-title">Console</span>
+          <button class="console-clear" id="clearConsole">Clear</button>
+        </div>
+        <div class="console-output" id="consoleOutput">
+          <div class="console-line">
+            <span class="console-time" id="outputTime"></span>
+            <span class="console-message" id="output">Initializing...</span>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <span>QSM-WASM | Browser-based Quantitative Susceptibility Mapping</span>
+      <span>Powered by Pyodide, NiiVue &amp; ROMEO</span>
+    </footer>
+  </div>
+
+  <!-- Application Script -->
+  <script src="js/qsm-app-romeo.js"></script>
+
+  <!-- Additional UI Interactions -->
+  <script>
+    // View tab switching
+    document.querySelectorAll('.view-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        if (!window.app || !window.app.nv) return;
+
+        document.querySelectorAll('.view-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+
+        const view = tab.dataset.view;
+        const nv = window.app.nv;
+
+        switch(view) {
+          case 'multiplanar':
+            nv.setSliceType(nv.sliceTypeMultiplanar);
+            break;
+          case 'axial':
+            nv.setSliceType(nv.sliceTypeAxial);
+            break;
+          case 'coronal':
+            nv.setSliceType(nv.sliceTypeCoronal);
+            break;
+          case 'sagittal':
+            nv.setSliceType(nv.sliceTypeSagittal);
+            break;
+          case 'render':
+            nv.setSliceType(nv.sliceTypeRender);
+            break;
+        }
+      });
+    });
+
+    // Colormap selection
+    document.getElementById('colormapSelect').addEventListener('change', (e) => {
+      if (!window.app || !window.app.nv || !window.app.nv.volumes.length) return;
+      window.app.nv.setColormap(0, e.target.value);
+    });
+
+    // Clear console
+    document.getElementById('clearConsole').addEventListener('click', () => {
+      const consoleOutput = document.getElementById('consoleOutput');
+      if (consoleOutput) consoleOutput.innerHTML = '';
+    });
+
+    // Drag and drop enhancement
+    ['magnitudeDrop', 'phaseDrop', 'jsonDrop'].forEach(id => {
+      const dropZone = document.getElementById(id);
+      if (!dropZone) return;
+
+      dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+      });
+
+      dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover');
+      });
+
+      dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        const input = dropZone.querySelector('input[type="file"]');
+        if (input && e.dataTransfer.files.length) {
+          input.files = e.dataTransfer.files;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      });
+    });
+
+    // Update status when app is ready
+    const checkReady = setInterval(() => {
+      if (window.app) {
+        const statusDot = document.getElementById('pyodideStatus');
+        const statusText = document.getElementById('statusText');
+        if (statusDot && statusText) {
+          statusDot.classList.remove('loading');
+          statusDot.classList.add('ready');
+          statusText.textContent = 'Ready';
+        }
+        clearInterval(checkReady);
+      }
+    }, 500);
+  </script>
+
+  <style>
+    /* Additional styles for stage buttons grid */
+    .stage-buttons-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-xs);
+    }
+
+    .stage-item {
+      display: flex;
+      gap: 2px;
+    }
+
+    .stage-item .stage-tab {
+      flex: 1;
+      font-size: 0.7rem;
+      padding: var(--space-xs);
+    }
+
+    .stage-item .btn:last-child {
+      padding: var(--space-xs);
+    }
+
+    .stage-item .btn:last-child svg {
+      width: 12px;
+      height: 12px;
+    }
+
+    /* Ready badge style */
+    #echoBadge.ready {
+      color: var(--color-success);
+    }
+
+    /* Threshold slider */
+    .threshold-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: var(--space-xs);
+    }
+
+    .threshold-value {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--color-primary);
+    }
+
+    .threshold-slider {
+      width: 100%;
+      height: 6px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: var(--color-border);
+      border-radius: 3px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .threshold-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      background: var(--color-primary);
+      border-radius: 50%;
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+
+    .threshold-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+
+    .threshold-slider::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      background: var(--color-primary);
+      border-radius: 50%;
+      cursor: pointer;
+      border: none;
+    }
+
+    .threshold-info {
+      font-size: 0.7rem;
+      color: var(--color-text-muted);
+      margin-top: var(--space-xs);
+    }
+
+    /* Compact preview buttons */
+    .preview-buttons {
+      display: flex;
+      gap: var(--space-xs);
+      margin-top: var(--space-sm);
+    }
+
+    .preview-buttons .btn {
+      flex: 1;
+      font-size: 0.7rem;
+      padding: var(--space-xs) var(--space-sm);
+    }
+
+    .preview-buttons .btn svg {
+      width: 12px;
+      height: 12px;
+    }
+
+    /* Inline param with unit */
+    .param-inline {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+    }
+
+    .param-inline input {
+      flex: 1;
+    }
+
+    .param-inline .unit {
+      font-size: 0.7rem;
+      color: var(--color-text-muted);
+      white-space: nowrap;
+    }
+  </style>
 </body>
 </html>

@@ -139,3 +139,7 @@ dmypy.json
 *.key
 *.cert
 *.crt
+
+QSM.jl/
+ROMEO.jl/
+MriResearchTools.jl/

@@ -1,0 +1,835 @@
+class QSMApp {
+  constructor() {
+    this.worker = null;
+    this.workerReady = false;
+    this.nv = new window.Niivue({
+      onLocationChange: (data) => {
+        document.getElementById("intensity").innerHTML = data.string;
+      }
+    });
+    this.currentFile = null;
+    this.threshold = 75;
+    this.progress = 0;
+
+    // Smooth progress animation state
+    this.targetProgress = 0;      // Actual progress from pipeline
+    this.animatedProgress = 0;    // Displayed (animated) progress
+    this.progressAnimationId = null;
+    this.lastAnimationTime = 0;
+    // Animation speed: move at ~0.67% per second (completes 100% in ~150s typical runtime)
+    this.progressAnimationSpeed = 0.0067;
+
+    // Multi-echo file storage
+    this.multiEchoFiles = {
+      magnitude: [],
+      phase: [],
+      json: [],
+      echoTimes: [],
+      combinedMagnitude: null,
+      combinedPhase: null
+    };
+
+    // Processing results
+    this.results = {
+      magnitude: { path: null, file: null },
+      phase: { path: null, file: null },
+      mask: { path: null, file: null },
+      B0: { path: null, file: null },
+      bgRemoved: { path: null, file: null },
+      final: { path: null, file: null }
+    };
+
+    // Pending stage requests
+    this.pendingStageResolve = null;
+
+    // Mask threshold (percentage of max magnitude)
+    this.maskThreshold = 15;
+    this.magnitudeData = null;  // Cached magnitude array for mask preview
+    this.magnitudeMax = 0;
+
+    this.init();
+  }
+
+  async init() {
+    await this.setupViewer();
+    this.setupUIControls();
+    this.setupEventListeners();
+    this.updateDownloadButtons();
+
+    // Initialize file lists
+    this.updateFileList('magnitude', []);
+    this.updateFileList('phase', []);
+    this.updateFileList('json', []);
+
+    this.updateOutput("Ready. Upload magnitude, phase, and JSON files for each echo.");
+  }
+
+  setupWorker() {
+    if (this.worker) return;
+
+    this.worker = new Worker('js/qsm-worker.js');
+
+    this.worker.onmessage = (e) => {
+      const { type, ...data } = e.data;
+
+      switch (type) {
+        case 'progress':
+          this.setProgress(data.value, data.text);
+          break;
+
+        case 'log':
+          this.updateOutput(data.message);
+          break;
+
+        case 'error':
+          this.updateOutput(`Error: ${data.message}`);
+          this.setProgress(0, 'Failed');
+          break;
+
+        case 'initialized':
+          this.workerReady = true;
+          this.updateOutput("Pyodide initialized in worker");
+          break;
+
+        case 'complete':
+          this.updateOutput("Pipeline completed successfully!");
+          this.showStageButtons();
+          break;
+
+        case 'stageData':
+          if (this.pendingStageResolve) {
+            this.pendingStageResolve(data);
+            this.pendingStageResolve = null;
+          }
+          break;
+      }
+    };
+
+    this.worker.onerror = (e) => {
+      this.updateOutput(`Worker error: ${e.message}`);
+      console.error('Worker error:', e);
+    };
+  }
+
+  async initializeWorker() {
+    this.setupWorker();
+
+    if (this.workerReady) return;
+
+    this.updateOutput("Initializing Pyodide in background...");
+
+    // Fetch ROMEO code
+    const romeoCode = await fetch('./romeo_python.py').then(r => r.text());
+
+    // Send init message to worker
+    this.worker.postMessage({
+      type: 'init',
+      data: { romeoCode }
+    });
+
+    // Wait for initialization
+    return new Promise((resolve) => {
+      const checkReady = setInterval(() => {
+        if (this.workerReady) {
+          clearInterval(checkReady);
+          resolve();
+        }
+      }, 100);
+    });
+  }
+
+  async setupViewer() {
+    await this.nv.attachTo("gl1");
+    this.nv.setMultiplanarPadPixels(5);
+    this.nv.setSliceType(this.nv.sliceTypeMultiplanar);
+  }
+
+  setupUIControls() {
+    // Sidebar toggle
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const sidebar = document.getElementById('sidebar');
+    if (sidebarToggle && sidebar) {
+      sidebarToggle.addEventListener('click', () => {
+        sidebar.classList.toggle('collapsed');
+      });
+    }
+
+    // Console toggle
+    const consoleHeader = document.querySelector('.console-header');
+    const consoleEl = document.getElementById('console');
+    if (consoleHeader && consoleEl) {
+      consoleHeader.addEventListener('click', () => {
+        consoleEl.classList.toggle('collapsed');
+      });
+    }
+
+    // Stage tab switching
+    const stageTabs = document.querySelectorAll('.stage-tab');
+    stageTabs.forEach(tab => {
+      tab.addEventListener('click', (e) => {
+        if (e.target.classList.contains('tab-download')) return;
+        stageTabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+      });
+    });
+  }
+
+  setProgress(value, text = null) {
+    this.progress = value;
+    this.targetProgress = value;
+
+    const textEl = document.getElementById('progressText');
+    if (textEl) textEl.textContent = text || `${Math.round(value * 100)}%`;
+
+    // Start animation if not already running
+    if (!this.progressAnimationId && value > 0 && value < 1) {
+      this.lastAnimationTime = performance.now();
+      this.animateProgress();
+    }
+
+    // If complete, jump to 100% and stop animation
+    if (value >= 1) {
+      this.animatedProgress = 1;
+      this.updateProgressBar();
+      this.stopProgressAnimation();
+    }
+
+    // If reset to 0, reset animation
+    if (value === 0) {
+      this.animatedProgress = 0;
+      this.updateProgressBar();
+      this.stopProgressAnimation();
+    }
+  }
+
+  animateProgress() {
+    const now = performance.now();
+    const deltaTime = (now - this.lastAnimationTime) / 1000; // Convert to seconds
+    this.lastAnimationTime = now;
+
+    // Move animated progress toward target, but don't exceed it
+    if (this.animatedProgress < this.targetProgress) {
+      // Calculate how much to move based on time elapsed
+      const increment = this.progressAnimationSpeed * deltaTime;
+      this.animatedProgress = Math.min(this.animatedProgress + increment, this.targetProgress);
+      this.updateProgressBar();
+    }
+    // If animated progress has caught up to target, we just wait (pause)
+    // The bar will resume moving when a new setProgress call increases targetProgress
+
+    // Continue animation loop if not complete
+    if (this.targetProgress < 1 && this.targetProgress > 0) {
+      this.progressAnimationId = requestAnimationFrame(() => this.animateProgress());
+    } else {
+      this.progressAnimationId = null;
+    }
+  }
+
+  updateProgressBar() {
+    const fill = document.getElementById('progressFill');
+    if (fill) {
+      fill.style.width = `${this.animatedProgress * 100}%`;
+    }
+  }
+
+  stopProgressAnimation() {
+    if (this.progressAnimationId) {
+      cancelAnimationFrame(this.progressAnimationId);
+      this.progressAnimationId = null;
+    }
+  }
+
+  setupEventListeners() {
+    // Multi-echo file inputs
+    document.getElementById('magnitudeFiles').addEventListener('change', (e) => {
+      this.handleMultipleFiles(e, 'magnitude');
+    });
+    
+    document.getElementById('phaseFiles').addEventListener('change', (e) => {
+      this.handleMultipleFiles(e, 'phase');
+    });
+    
+    document.getElementById('jsonFiles').addEventListener('change', (e) => {
+      this.handleMultipleFiles(e, 'json');
+    });
+
+    // Processing buttons
+    document.getElementById('run').addEventListener('click', () => this.runRomeoQSM());
+    document.getElementById('vis_magnitude').addEventListener('click', () => this.visualizeMagnitude());
+    document.getElementById('vis_phase').addEventListener('click', () => this.visualizePhase());
+
+    // Stage navigation
+    document.getElementById('showMagnitude').addEventListener('click', () => this.showStage('magnitude'));
+    document.getElementById('showPhase').addEventListener('click', () => this.showStage('phase'));
+    document.getElementById('showMask').addEventListener('click', () => this.showStage('mask'));
+    document.getElementById('showB0').addEventListener('click', () => this.showStage('B0'));
+    document.getElementById('showBgRemoved').addEventListener('click', () => this.showStage('bgRemoved'));
+    document.getElementById('showDipoleInversed').addEventListener('click', () => this.showStage('final'));
+
+    // Download buttons
+    document.getElementById('downloadMagnitude').addEventListener('click', () => this.downloadStage('magnitude'));
+    document.getElementById('downloadPhase').addEventListener('click', () => this.downloadStage('phase'));
+    document.getElementById('downloadMask').addEventListener('click', () => this.downloadStage('mask'));
+    document.getElementById('downloadB0').addEventListener('click', () => this.downloadStage('B0'));
+    document.getElementById('downloadBgRemoved').addEventListener('click', () => this.downloadStage('bgRemoved'));
+    document.getElementById('downloadDipoleInversed').addEventListener('click', () => this.downloadStage('final'));
+
+    // Mask threshold slider with debounce
+    const thresholdSlider = document.getElementById('maskThreshold');
+    if (thresholdSlider) {
+      thresholdSlider.addEventListener('input', (e) => {
+        this.maskThreshold = parseInt(e.target.value);
+        document.getElementById('thresholdValue').textContent = `${this.maskThreshold}%`;
+
+        // Debounce the mask preview update
+        if (this.maskUpdateTimeout) {
+          clearTimeout(this.maskUpdateTimeout);
+        }
+        this.maskUpdateTimeout = setTimeout(() => {
+          if (this.magnitudeData && !this.maskUpdating) {
+            this.updateMaskPreview();
+          }
+        }, 150);
+      });
+    }
+
+    // Preview mask button
+    const previewMaskBtn = document.getElementById('previewMask');
+    if (previewMaskBtn) {
+      previewMaskBtn.addEventListener('click', () => this.previewMask());
+    }
+  }
+
+  async handleMultipleFiles(event, type) {
+    const files = Array.from(event.target.files);
+
+    // Store files
+    this.multiEchoFiles[type] = files.map(file => ({
+      file: file,
+      name: file.name
+    }));
+
+    // Update UI
+    this.updateFileList(type, this.multiEchoFiles[type]);
+
+    // Process JSON files immediately to extract echo times
+    if (type === 'json') {
+      await this.processJsonFiles(files);
+    }
+
+    // Show mask section and auto-preview when magnitude files are loaded
+    if (type === 'magnitude' && files.length > 0) {
+      const maskSection = document.getElementById('maskSection');
+      if (maskSection) {
+        maskSection.style.display = 'block';
+      }
+      // Auto-preview the mask so user can immediately adjust threshold
+      setTimeout(() => this.previewMask(), 100);
+    }
+
+    // Update echo information
+    this.updateEchoInfo();
+  }
+
+  updateFileList(type, fileList) {
+    const listElement = document.getElementById(`${type}List`);
+    const fileDrop = listElement?.closest('.upload-group')?.querySelector('.file-drop');
+
+    if (!listElement) {
+      console.error(`File list element not found: ${type}List`);
+      return;
+    }
+
+    listElement.innerHTML = '';
+
+    if (fileList.length > 0) {
+      fileDrop?.classList.add('has-files');
+      fileList.forEach((fileData, index) => {
+        const fileItem = document.createElement('div');
+        fileItem.className = 'file-item';
+        fileItem.innerHTML = `
+          <span>${fileData.name}</span>
+          <button class="file-remove" onclick="app.removeFile('${type}', ${index})">×</button>
+        `;
+        listElement.appendChild(fileItem);
+      });
+
+      // Update drop label
+      const label = fileDrop?.querySelector('.file-drop-label span');
+      if (label) {
+        label.textContent = `${fileList.length} file${fileList.length > 1 ? 's' : ''} selected`;
+      }
+    } else {
+      fileDrop?.classList.remove('has-files');
+      const label = fileDrop?.querySelector('.file-drop-label span');
+      if (label) {
+        const defaults = {
+          'magnitude': 'Drop files or click',
+          'phase': 'Drop files or click',
+          'json': 'Echo times (BIDS)'
+        };
+        label.textContent = defaults[type] || 'Drop files or click';
+      }
+    }
+  }
+
+  removeFile(type, index) {
+    this.multiEchoFiles[type].splice(index, 1);
+    this.updateFileList(type, this.multiEchoFiles[type]);
+    this.updateEchoInfo();
+  }
+
+  async processJsonFiles(files) {
+    console.log('Processing JSON files:', files);
+    const echoTimes = [];
+    
+    for (const file of files) {
+      try {
+        const text = await file.text();
+        const json = JSON.parse(text);
+        
+        console.log(`JSON file ${file.name} contents:`, json);
+        console.log(`EchoTime field:`, json.EchoTime);
+        console.log(`Available fields:`, Object.keys(json));
+        
+        // Extract echo time (in seconds, convert to ms)
+        let echoTime = null;
+        if (json.EchoTime) {
+          echoTime = json.EchoTime * 1000; // Convert to ms
+          console.log(`Found EchoTime: ${json.EchoTime}s -> ${echoTime}ms`);
+        } else if (json.echo_time) {
+          echoTime = json.echo_time * 1000;
+          console.log(`Found echo_time: ${json.echo_time}s -> ${echoTime}ms`);
+        } else if (json.TE) {
+          echoTime = json.TE;
+          console.log(`Found TE: ${json.TE}ms`);
+        } else {
+          console.warn(`No echo time found in ${file.name}. Available fields:`, Object.keys(json));
+        }
+        
+        if (echoTime !== null) {
+          echoTimes.push({
+            file: file.name,
+            echoTime: echoTime,
+            json: json
+          });
+          console.log(`Added echo time for ${file.name}: ${echoTime}ms`);
+        } else {
+          console.error(`Could not extract echo time from ${file.name}`);
+        }
+      } catch (error) {
+        console.error(`Error parsing JSON file ${file.name}:`, error);
+      }
+    }
+
+    // Sort by echo time
+    echoTimes.sort((a, b) => a.echoTime - b.echoTime);
+    this.multiEchoFiles.echoTimes = echoTimes;
+    
+    console.log(`Final processed echo times:`, echoTimes);
+    console.log(`Stored in multiEchoFiles:`, this.multiEchoFiles.echoTimes);
+  }
+
+  updateEchoInfo() {
+    const magCount = this.multiEchoFiles.magnitude.length;
+    const phaseCount = this.multiEchoFiles.phase.length;
+    const echoTimeCount = this.multiEchoFiles.echoTimes.length;
+
+    const echoBadge = document.getElementById('echoBadge');
+    const runButton = document.getElementById('run');
+
+    const isValid = magCount === phaseCount && magCount > 0;
+    const hasEchoTimes = echoTimeCount > 0;
+    const canRun = isValid && hasEchoTimes;
+
+    // Update echo badge
+    if (echoBadge) {
+      if (canRun) {
+        echoBadge.textContent = `${magCount} echo${magCount > 1 ? 'es' : ''} ready`;
+        echoBadge.classList.add('ready');
+      } else if (magCount > 0 || phaseCount > 0) {
+        const issues = [];
+        if (magCount !== phaseCount) issues.push('file mismatch');
+        if (!hasEchoTimes) issues.push('no echo times');
+        echoBadge.textContent = issues.join(', ') || 'Incomplete';
+        echoBadge.classList.remove('ready');
+      } else {
+        echoBadge.textContent = 'No files loaded';
+        echoBadge.classList.remove('ready');
+      }
+    }
+
+    // Update run button
+    if (runButton) {
+      runButton.disabled = !canRun;
+      const btnText = runButton.querySelector('span');
+      if (btnText) {
+        btnText.textContent = canRun ? `Run Pipeline (${magCount} echoes)` : 'Run Pipeline';
+      }
+    }
+  }
+
+  async visualizeMagnitude() {
+    if (this.multiEchoFiles.magnitude.length === 0) {
+      this.updateOutput("No magnitude files uploaded");
+      return;
+    }
+
+    const file = this.multiEchoFiles.magnitude[0].file;
+    await this.loadAndVisualizeFile(file, "Magnitude (Echo 1)");
+  }
+
+  async visualizePhase() {
+    if (this.multiEchoFiles.phase.length === 0) {
+      this.updateOutput("No phase files uploaded");
+      return;
+    }
+
+    const file = this.multiEchoFiles.phase[0].file;
+    await this.loadAndVisualizeFile(file, "Phase (Echo 1)");
+  }
+
+  async loadAndVisualizeFile(file, description) {
+    try {
+      this.updateOutput(`Loading ${description}...`);
+
+      // Create a blob URL for NiiVue to load
+      const url = URL.createObjectURL(file);
+
+      // Load using loadVolumes which handles the URL properly
+      await this.nv.loadVolumes([{ url: url, name: file.name }]);
+
+      // Clean up the blob URL
+      URL.revokeObjectURL(url);
+
+      this.updateOutput(`${description} loaded`);
+      this.currentFile = file;
+    } catch (error) {
+      this.updateOutput(`Error loading ${description}: ${error.message}`);
+      console.error(error);
+    }
+  }
+
+  async previewMask() {
+    if (this.multiEchoFiles.magnitude.length === 0) {
+      this.updateOutput("No magnitude files uploaded");
+      return;
+    }
+
+    try {
+      this.updateOutput("Loading magnitude for mask preview...");
+      const file = this.multiEchoFiles.magnitude[0].file;
+
+      // Store the original file bytes for header copying
+      this.magnitudeFileBytes = await file.arrayBuffer();
+
+      // Load magnitude into NiiVue
+      const url = URL.createObjectURL(file);
+      await this.nv.loadVolumes([{ url: url, name: file.name }]);
+      URL.revokeObjectURL(url);
+
+      // Cache magnitude data for threshold updates
+      if (this.nv.volumes.length > 0) {
+        const vol = this.nv.volumes[0];
+        this.magnitudeData = vol.img;
+        // Find max without spread operator (avoids "too many arguments" for large arrays)
+        let max = -Infinity;
+        for (let i = 0; i < this.magnitudeData.length; i++) {
+          if (this.magnitudeData[i] > max) max = this.magnitudeData[i];
+        }
+        this.magnitudeMax = max;
+        // Store the full volume reference for header info
+        this.magnitudeVolume = vol;
+
+        // Update mask preview
+        await this.updateMaskPreview();
+      }
+
+      this.updateOutput("Adjust threshold slider to refine mask");
+    } catch (error) {
+      this.updateOutput(`Error: ${error.message}`);
+      console.error(error);
+    }
+  }
+
+  async updateMaskPreview() {
+    if (!this.magnitudeData || !this.nv.volumes.length || !this.magnitudeFileBytes) return;
+    if (this.maskUpdating) return;  // Prevent concurrent updates
+
+    this.maskUpdating = true;
+
+    try {
+      const threshold = (this.maskThreshold / 100) * this.magnitudeMax;
+
+      // Count voxels in mask
+      let maskCount = 0;
+      const totalVoxels = this.magnitudeData.length;
+      for (let i = 0; i < totalVoxels; i++) {
+        if (this.magnitudeData[i] > threshold) maskCount++;
+      }
+
+      // Update coverage display
+      const coverage = ((maskCount / totalVoxels) * 100).toFixed(1);
+      const coverageEl = document.getElementById('maskCoverage');
+      if (coverageEl) {
+        coverageEl.textContent = `Coverage: ${maskCount.toLocaleString()} / ${totalVoxels.toLocaleString()} voxels (${coverage}%)`;
+      }
+
+      // Create mask data
+      const maskData = new Float32Array(totalVoxels);
+      for (let i = 0; i < totalVoxels; i++) {
+        maskData[i] = this.magnitudeData[i] > threshold ? 1 : 0;
+      }
+
+      // Remove ALL existing overlays (everything except base volume)
+      while (this.nv.volumes.length > 1) {
+        await this.nv.removeVolumeByIndex(1);
+      }
+
+      // Create mask NIfTI by copying header from original file
+      const maskNifti = this.createMaskNifti(maskData);
+      const maskBlob = new Blob([maskNifti], { type: 'application/octet-stream' });
+      const maskUrl = URL.createObjectURL(maskBlob);
+
+      await this.nv.addVolumeFromUrl({
+        url: maskUrl,
+        name: 'mask_preview.nii',
+        colormap: 'red',
+        opacity: 0.5
+      });
+
+      URL.revokeObjectURL(maskUrl);
+
+    } catch (error) {
+      console.error('Error updating mask preview:', error);
+    } finally {
+      this.maskUpdating = false;
+    }
+  }
+
+  createMaskNifti(maskData) {
+    // Copy header from original magnitude file and replace data
+    const srcBytes = new Uint8Array(this.magnitudeFileBytes);
+    const srcView = new DataView(this.magnitudeFileBytes);
+
+    // Get vox_offset from original header (offset 108, float32)
+    const voxOffset = srcView.getFloat32(108, true);
+    const headerSize = Math.ceil(voxOffset);
+
+    // Create new buffer: header + mask data (as float32)
+    const dataSize = maskData.length * 4;
+    const buffer = new ArrayBuffer(headerSize + dataSize);
+    const destBytes = new Uint8Array(buffer);
+    const destView = new DataView(buffer);
+
+    // Copy entire header from source
+    destBytes.set(srcBytes.slice(0, headerSize));
+
+    // Update datatype to FLOAT32 (16) at offset 70
+    destView.setInt16(70, 16, true);
+    // Update bitpix to 32 at offset 72
+    destView.setInt16(72, 32, true);
+
+    // Make it 3D (remove 4th dimension if present)
+    destView.setInt16(40, 3, true);  // ndim = 3
+    destView.setInt16(48, 1, true);  // dim[4] = 1
+
+    // Copy mask data
+    const dataView = new Float32Array(buffer, headerSize);
+    dataView.set(maskData);
+
+    return buffer;
+  }
+
+  async runRomeoQSM() {
+    // Validation
+    const magCount = this.multiEchoFiles.magnitude.length;
+    const phaseCount = this.multiEchoFiles.phase.length;
+    const echoTimeCount = this.multiEchoFiles.echoTimes.length;
+
+    if (magCount === 0 || phaseCount === 0) {
+      this.updateOutput("Please upload both magnitude and phase files");
+      return;
+    }
+
+    if (magCount !== phaseCount) {
+      this.updateOutput(`File count mismatch: ${magCount} magnitude, ${phaseCount} phase`);
+      return;
+    }
+
+    if (echoTimeCount === 0) {
+      this.updateOutput("No echo times found in JSON files");
+      return;
+    }
+
+    // Get parameters
+    const magField = parseFloat(document.getElementById('magField').value);
+    const unwrapMode = document.getElementById('unwrapMode').value;
+
+    if (!magField || magField <= 0) {
+      this.updateOutput("Please enter a valid magnetic field strength");
+      return;
+    }
+
+    try {
+      // Initialize worker if needed
+      await this.initializeWorker();
+
+      this.updateOutput("Starting ROMEO QSM Pipeline...");
+
+      // Prepare data for worker
+      const sortedEchoTimes = this.multiEchoFiles.echoTimes.slice().sort((a, b) => a.echoTime - b.echoTime);
+      const echoTimes = sortedEchoTimes.map(et => et.echoTime);
+
+      // Read file buffers
+      const magnitudeBuffers = [];
+      const phaseBuffers = [];
+
+      for (let i = 0; i < sortedEchoTimes.length; i++) {
+        const magFile = this.multiEchoFiles.magnitude[i]?.file;
+        const phaseFile = this.multiEchoFiles.phase[i]?.file;
+
+        if (magFile && phaseFile) {
+          magnitudeBuffers.push(await magFile.arrayBuffer());
+          phaseBuffers.push(await phaseFile.arrayBuffer());
+        }
+      }
+
+      // Send to worker
+      this.worker.postMessage({
+        type: 'run',
+        data: {
+          magnitudeBuffers,
+          phaseBuffers,
+          echoTimes,
+          magField,
+          unwrapMode,
+          maskThreshold: this.maskThreshold
+        }
+      });
+
+    } catch (error) {
+      this.updateOutput(`Error: ${error.message}`);
+      this.setProgress(0, 'Failed');
+      console.error(error);
+    }
+  }
+
+  showStageButtons() {
+    document.getElementById('stage-buttons').classList.remove('hidden');
+    this.updateDownloadButtons();
+  }
+
+  updateDownloadButtons() {
+    // Enable buttons based on available data
+    // This is a simplified version - in production you'd check actual data availability
+    const buttons = ['downloadMagnitude', 'downloadPhase', 'downloadMask', 'downloadB0', 'downloadBgRemoved', 'downloadDipoleInversed'];
+    buttons.forEach(id => {
+      const button = document.getElementById(id);
+      button.disabled = false; // Enable all buttons after processing
+    });
+  }
+
+  async showStage(stage) {
+    if (!this.worker || !this.workerReady) {
+      this.updateOutput("Pipeline not yet run");
+      return;
+    }
+
+    try {
+      this.updateOutput(`Loading ${stage}...`);
+
+      // Request stage data from worker
+      this.worker.postMessage({
+        type: 'getStage',
+        data: { stage }
+      });
+
+      // Wait for response
+      const result = await new Promise((resolve) => {
+        this.pendingStageResolve = resolve;
+      });
+
+      // Create file from bytes
+      const blob = new Blob([result.data], { type: 'application/octet-stream' });
+      const file = new File([blob], `${stage}.nii`, { type: 'application/octet-stream' });
+
+      // Load in viewer
+      await this.loadAndVisualizeFile(file, result.description);
+
+      this.results[stage] = { file: file, path: `${stage}.nii` };
+
+    } catch (error) {
+      this.updateOutput(`Error showing ${stage}: ${error.message}`);
+    }
+  }
+
+  async downloadStage(stage) {
+    if (!this.results[stage]?.file) {
+      await this.showStage(stage); // Generate if not already available
+    }
+    
+    if (this.results[stage]?.file) {
+      const file = this.results[stage].file;
+      const url = URL.createObjectURL(file);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${stage}_${new Date().toISOString().slice(0,10)}.nii`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  updateOutput(message) {
+    const consoleOutput = document.getElementById('consoleOutput');
+    if (consoleOutput) {
+      const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+      const line = document.createElement('div');
+      line.className = 'console-line';
+      line.innerHTML = `<span class="console-time">[${time}]</span> <span class="console-message">${message}</span>`;
+      consoleOutput.appendChild(line);
+      // Auto-scroll to bottom
+      consoleOutput.scrollTop = consoleOutput.scrollHeight;
+    }
+    console.log(message);
+  }
+}
+
+// Initialize the app - this will be called after NiiVue is loaded by the module script
+let app;
+
+function initQSMApp() {
+  console.log('Initializing QSM App with NiiVue:', window.Niivue);
+  app = new QSMApp();
+}
+
+// If the script loads after DOM is ready, initialize immediately
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    if (window.Niivue) {
+      initQSMApp();
+    } else {
+      console.log('Waiting for NiiVue...');
+      setTimeout(() => {
+        if (window.Niivue) {
+          initQSMApp();
+        } else {
+          document.getElementById("output").textContent = "Error: NiiVue library failed to load. Please refresh the page.";
+        }
+      }, 2000);
+    }
+  });
+} else {
+  // DOM already loaded
+  if (window.Niivue) {
+    initQSMApp();
+  } else {
+    setTimeout(() => {
+      if (window.Niivue) {
+        initQSMApp();
+      } else {
+        document.getElementById("output").textContent = "Error: NiiVue library failed to load. Please refresh the page.";
+      }
+    }, 1000);
+  }
+}
