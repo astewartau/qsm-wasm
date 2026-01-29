@@ -153,7 +153,7 @@ class QSMApp {
     this.updateOutput("Initializing Pyodide in background...");
 
     // Fetch ROMEO code
-    const romeoCode = await fetch('./romeo_python.py').then(r => r.text());
+    const romeoCode = await fetch('./python/romeo_python.py').then(r => r.text());
 
     // Send init message to worker
     this.worker.postMessage({
@@ -1372,7 +1372,7 @@ class QSMApp {
       this.updateOutput(`Image dimensions: ${nx}x${ny}x${nz}, voxel size: ${dx.toFixed(2)}x${dy.toFixed(2)}x${dz.toFixed(2)}mm`);
 
       // Fetch BET code
-      const betCode = await fetch('./bet_python.py').then(r => r.text());
+      const betCode = await fetch('./python/bet_python.py').then(r => r.text());
 
       // Set up handler for BET messages
       const betHandler = (e) => {
