@@ -175,13 +175,74 @@
           </div>
         </div>
 
-        <button class="btn btn-secondary btn-sm" id="previewMask" style="width: 100%; margin-top: var(--space-sm);">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-            <circle cx="12" cy="12" r="3"/>
-          </svg>
-          Preview Mask
-        </button>
+        <div class="mask-preview-buttons">
+          <button class="btn btn-secondary btn-sm" id="previewMask" title="Generate mask from threshold">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            Threshold
+          </button>
+          <button class="btn btn-secondary btn-sm" id="runBET" title="BET brain extraction (slower but more accurate)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M12 8c-2.2 0-4 1.8-4 4s1.8 4 4 4 4-1.8 4-4"/>
+            </svg>
+            BET
+          </button>
+        </div>
+
+        <!-- Morphological Operations -->
+        <div class="mask-operations" id="maskOperations" style="display: none; margin-top: var(--space-sm);">
+          <label class="param-label" style="margin-bottom: var(--space-xs);">Refine Mask</label>
+          <div class="mask-op-buttons">
+            <button class="btn btn-secondary btn-sm" id="fillHoles" title="Fill holes inside the mask">
+              Fill Holes
+            </button>
+            <button class="btn btn-secondary btn-sm" id="erodeMask" title="Shrink mask boundaries">
+              Erode
+            </button>
+            <button class="btn btn-secondary btn-sm" id="dilateMask" title="Expand mask boundaries">
+              Dilate
+            </button>
+            <button class="btn btn-secondary btn-sm" id="resetMask" title="Reset to threshold-based mask">
+              Reset
+            </button>
+          </div>
+
+          <!-- Drawing/Painting Tools -->
+          <label class="param-label" style="margin-top: var(--space-sm); margin-bottom: var(--space-xs);">Paint Mask</label>
+          <div class="drawing-controls">
+            <div class="brush-mode-buttons">
+              <button class="btn btn-secondary btn-sm" id="enableDrawing" title="Enable brush painting">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 19l7-7 3 3-7 7-3-3z"/>
+                  <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/>
+                  <path d="M2 2l7.586 7.586"/>
+                </svg>
+                Draw
+              </button>
+              <button class="btn btn-secondary btn-sm" id="brushAdd" title="Add to mask" disabled>
+                + Add
+              </button>
+              <button class="btn btn-secondary btn-sm" id="brushRemove" title="Remove from mask" disabled>
+                - Remove
+              </button>
+            </div>
+            <div class="brush-size-control" id="brushSizeControl" style="display: none;">
+              <label class="param-label" style="font-size: 0.7rem;">Brush Size: <span id="brushSizeValue">2</span></label>
+              <input type="range" id="brushSize" min="1" max="10" value="2" class="threshold-slider">
+            </div>
+            <div class="drawing-actions" id="drawingActions" style="display: none;">
+              <button class="btn btn-secondary btn-sm" id="undoDraw" title="Undo last stroke">
+                Undo
+              </button>
+              <button class="btn btn-primary btn-sm" id="applyDrawing" title="Apply drawing to mask">
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- Progress & Run Section -->
@@ -199,12 +260,20 @@
           </div>
         </div>
 
-        <button class="btn btn-primary" id="run" disabled>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polygon points="5 3 19 12 5 21 5 3"/>
-          </svg>
-          <span>Run Pipeline</span>
-        </button>
+        <div class="run-button-group">
+          <button class="btn btn-primary" id="run" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            <span>Run Pipeline</span>
+          </button>
+          <button class="btn btn-secondary" id="pipelineSettings" title="Pipeline Settings">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </button>
+        </div>
       </section>
 
       <!-- Results Section -->
@@ -300,6 +369,21 @@
         </div>
 
         <div class="viewer-actions">
+          <div class="window-controls">
+            <input type="number" id="windowMin" class="window-input" placeholder="min" step="any" title="Window minimum">
+            <div class="range-slider-container">
+              <input type="range" id="rangeMin" class="range-slider range-min" min="0" max="100" value="0">
+              <input type="range" id="rangeMax" class="range-slider range-max" min="0" max="100" value="100">
+              <div class="range-track"></div>
+              <div class="range-selected" id="rangeSelected"></div>
+            </div>
+            <input type="number" id="windowMax" class="window-input" placeholder="max" step="any" title="Window maximum">
+            <button class="btn btn-sm" id="resetWindow" title="Reset to full range">Auto</button>
+          </div>
+          <label class="interp-checkbox">
+            <input type="checkbox" id="interpolation">
+            <span>Interp</span>
+          </label>
           <select class="colormap-select" id="colormapSelect">
             <option value="gray">Gray</option>
             <option value="hot">Hot</option>
@@ -342,6 +426,210 @@
     </footer>
   </div>
 
+  <!-- Modals (outside app-container for proper z-index stacking) -->
+  <!-- Pipeline Settings Modal -->
+  <div class="modal-overlay" id="pipelineSettingsModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Pipeline Settings</h3>
+        <button class="modal-close" id="closePipelineSettings">&times;</button>
+      </div>
+      <div class="modal-body">
+        <!-- Phase Unwrapping Settings -->
+        <div class="settings-section">
+          <h4>Phase Unwrapping</h4>
+          <div class="param-group">
+            <label class="param-label" for="unwrapMethod">Method</label>
+            <select id="unwrapMethod">
+              <option value="romeo" selected>ROMEO (Quality-guided)</option>
+              <option value="laplacian">Laplacian (Fast)</option>
+            </select>
+          </div>
+
+          <!-- ROMEO Settings -->
+          <div id="romeoSettings" class="method-settings">
+            <div class="param-hint" style="margin-bottom: var(--space-sm); color: var(--color-text-muted);">
+              ROMEO uses quality-guided region growing for robust unwrapping
+            </div>
+            <div class="param-group">
+              <label class="param-label" for="romeoWeighting">Weighting</label>
+              <select id="romeoWeighting">
+                <option value="phase_snr" selected>Phase SNR (Recommended)</option>
+                <option value="magnitude">Magnitude</option>
+                <option value="uniform">Uniform</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Laplacian Settings -->
+          <div id="laplacianSettings" class="method-settings" style="display: none;">
+            <div class="param-hint" style="color: var(--color-text-muted);">
+              Laplacian unwrapping solves a Poisson equation - fast but may have residual wraps in noisy regions
+            </div>
+          </div>
+        </div>
+
+        <!-- Background Removal -->
+        <div class="settings-section">
+          <h4>Background Removal</h4>
+          <div class="param-group">
+            <label class="param-label" for="bgRemovalMethod">Method</label>
+            <select id="bgRemovalMethod">
+              <option value="vsharp" selected>V-SHARP (Variable radii)</option>
+              <option value="smv">SMV (Single radius)</option>
+            </select>
+          </div>
+
+          <!-- V-SHARP Settings -->
+          <div id="vsharpSettings" class="method-settings">
+            <div class="param-group">
+              <label class="param-label" for="vsharpMaxRadius">Max Radius (mm)</label>
+              <input type="number" id="vsharpMaxRadius" value="18" min="4" max="30" step="1">
+            </div>
+            <div class="param-group">
+              <label class="param-label" for="vsharpMinRadius">Min Radius (mm)</label>
+              <input type="number" id="vsharpMinRadius" value="2" min="1" max="10" step="1">
+            </div>
+            <div class="param-group">
+              <label class="param-label" for="vsharpThreshold">Threshold</label>
+              <input type="number" id="vsharpThreshold" value="0.05" min="0.01" max="0.2" step="0.01">
+            </div>
+          </div>
+
+          <!-- SMV Settings -->
+          <div id="smvSettings" class="method-settings" style="display: none;">
+            <div class="param-group">
+              <label class="param-label" for="smvRadius">Radius (mm)</label>
+              <input type="number" id="smvRadius" value="5" min="1" max="20" step="1">
+            </div>
+          </div>
+        </div>
+
+        <!-- Dipole Inversion -->
+        <div class="settings-section">
+          <h4>Dipole Inversion</h4>
+          <div class="param-group">
+            <label class="param-label" for="dipoleMethod">Method</label>
+            <select id="dipoleMethod">
+              <option value="tkd">TKD (Instant - basic)</option>
+              <option value="tikhonov">Tikhonov (Instant - smooth)</option>
+              <option value="tv" selected>TV-ADMM (Fast - edge-preserving)</option>
+              <option value="rts">RTS (Fast - iterative)</option>
+            </select>
+          </div>
+
+          <!-- TKD Settings -->
+          <div id="tkdSettings" class="method-settings" style="display: none;">
+            <div class="param-hint" style="margin-bottom: var(--space-sm); color: var(--color-text-muted);">
+              Truncated K-space Division - instant but may have streaking artifacts
+            </div>
+            <div class="param-group">
+              <label class="param-label" for="tkdThreshold">Threshold</label>
+              <input type="number" id="tkdThreshold" value="0.15" min="0.05" max="0.3" step="0.01">
+            </div>
+          </div>
+
+          <!-- Tikhonov Settings -->
+          <div id="tikhonovSettings" class="method-settings" style="display: none;">
+            <div class="param-hint" style="margin-bottom: var(--space-sm); color: var(--color-text-muted);">
+              L2-regularized solution - instant with smooth results
+            </div>
+            <div class="param-group">
+              <label class="param-label" for="tikhLambda">Lambda (regularization)</label>
+              <input type="number" id="tikhLambda" value="0.01" min="0.001" max="1.0" step="0.001">
+            </div>
+            <div class="param-group">
+              <label class="param-label" for="tikhReg">Regularization Type</label>
+              <select id="tikhReg">
+                <option value="identity" selected>Identity (minimal smoothing)</option>
+                <option value="gradient">Gradient (moderate smoothing)</option>
+                <option value="laplacian">Laplacian (strong smoothing)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- TV-ADMM Settings -->
+          <div id="tvSettings" class="method-settings">
+            <div class="param-hint" style="margin-bottom: var(--space-sm); color: var(--color-text-muted);">
+              Total Variation with ADMM - fast iterative, edge-preserving
+            </div>
+            <div class="param-group">
+              <label class="param-label" for="tvLambda">Lambda (TV regularization)</label>
+              <input type="number" id="tvLambda" value="0.001" min="0.0001" max="0.1" step="0.0001">
+            </div>
+            <div class="param-group">
+              <label class="param-label" for="tvMaxIter">Max Iterations</label>
+              <input type="number" id="tvMaxIter" value="50" min="10" max="250" step="10">
+            </div>
+            <div class="param-group">
+              <label class="param-label" for="tvTol">Tolerance</label>
+              <input type="number" id="tvTol" value="0.001" min="0.0001" max="0.01" step="0.0001">
+            </div>
+          </div>
+
+          <!-- RTS Settings -->
+          <div id="rtsSettings" class="method-settings" style="display: none;">
+            <div class="param-group">
+              <label class="param-label" for="rtsDelta">Delta (threshold)</label>
+              <input type="number" id="rtsDelta" value="0.15" min="0.05" max="0.3" step="0.01">
+            </div>
+            <div class="param-group">
+              <label class="param-label" for="rtsMu">Mu (data fidelity)</label>
+              <input type="number" id="rtsMu" value="100000" min="1000" max="1000000" step="1000">
+            </div>
+            <div class="param-group">
+              <label class="param-label" for="rtsRho">Rho (ADMM penalty)</label>
+              <input type="number" id="rtsRho" value="10" min="1" max="100" step="1">
+            </div>
+            <div class="param-group">
+              <label class="param-label" for="rtsMaxIter">Max Iterations</label>
+              <input type="number" id="rtsMaxIter" value="20" min="5" max="100" step="5">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="resetPipelineSettings">Reset Defaults</button>
+        <button class="btn btn-primary" id="savePipelineSettings">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BET Settings Modal -->
+  <div class="modal-overlay" id="betSettingsModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>BET Settings</h3>
+        <button class="modal-close" id="closeBetSettings">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-section">
+          <h4>Brain Extraction Parameters</h4>
+          <div class="param-group">
+            <label class="param-label" for="betFractionalIntensity">Fractional Intensity</label>
+            <div class="param-hint">Smaller values give larger brain estimate (0.0-1.0)</div>
+            <input type="range" id="betFractionalIntensity" min="0.1" max="0.9" value="0.5" step="0.05" class="threshold-slider">
+            <div class="param-value-display"><span id="betFractionalIntensityValue">0.5</span></div>
+          </div>
+          <div class="param-group">
+            <label class="param-label" for="betIterations">Iterations</label>
+            <div class="param-hint">More iterations = smoother result but slower (100-2000)</div>
+            <input type="number" id="betIterations" value="1000" min="100" max="2000" step="100">
+          </div>
+          <div class="param-group">
+            <label class="param-label" for="betSubdivisions">Mesh Subdivisions</label>
+            <div class="param-hint">3 = 642 vertices, 4 = 2562 vertices, 5 = 10242 vertices</div>
+            <input type="number" id="betSubdivisions" value="4" min="2" max="5" step="1">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="resetBetSettings">Reset Defaults</button>
+        <button class="btn btn-primary" id="runBetWithSettings">Run BET</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Application Script -->
   <script src="js/qsm-app-romeo.js"></script>
 
@@ -380,9 +668,137 @@
 
     // Colormap selection
     document.getElementById('colormapSelect').addEventListener('change', (e) => {
-      if (!window.app || !window.app.nv || !window.app.nv.volumes.length) return;
-      window.app.nv.setColormap(0, e.target.value);
+      if (!window.app || !window.app.nv) return;
+      const nv = window.app.nv;
+      if (!nv.volumes || nv.volumes.length === 0 || !nv.volumes[0]) return;
+      try {
+        nv.volumes[0].colormap = e.target.value;
+        nv.updateGLVolume();
+      } catch (err) {
+        console.warn('Could not set colormap:', err);
+      }
     });
+
+    // Window controls (min/max intensity) with dual range slider
+    const windowState = { dataMin: 0, dataMax: 100, currentMin: 0, currentMax: 100 };
+
+    function updateRangeHighlight() {
+      const rangeMin = document.getElementById('rangeMin');
+      const rangeMax = document.getElementById('rangeMax');
+      const selected = document.getElementById('rangeSelected');
+      const minPercent = ((rangeMin.value - rangeMin.min) / (rangeMin.max - rangeMin.min)) * 100;
+      const maxPercent = ((rangeMax.value - rangeMax.min) / (rangeMax.max - rangeMax.min)) * 100;
+      selected.style.left = minPercent + '%';
+      selected.style.width = (maxPercent - minPercent) + '%';
+    }
+
+    function sliderToValue(sliderVal) {
+      return windowState.dataMin + (sliderVal / 100) * (windowState.dataMax - windowState.dataMin);
+    }
+
+    function valueToSlider(val) {
+      if (windowState.dataMax === windowState.dataMin) return 50;
+      return ((val - windowState.dataMin) / (windowState.dataMax - windowState.dataMin)) * 100;
+    }
+
+    function applyWindow(minVal, maxVal) {
+      if (!window.app || !window.app.nv || !window.app.nv.volumes.length) return;
+      const vol = window.app.nv.volumes[0];
+      vol.cal_min = minVal;
+      vol.cal_max = maxVal;
+      window.app.nv.updateGLVolume();
+    }
+
+    function syncFromSliders() {
+      const minSlider = document.getElementById('rangeMin');
+      const maxSlider = document.getElementById('rangeMax');
+      // Prevent crossover
+      if (parseInt(minSlider.value) > parseInt(maxSlider.value) - 1) {
+        minSlider.value = parseInt(maxSlider.value) - 1;
+      }
+      if (parseInt(maxSlider.value) < parseInt(minSlider.value) + 1) {
+        maxSlider.value = parseInt(minSlider.value) + 1;
+      }
+      const minVal = sliderToValue(parseFloat(minSlider.value));
+      const maxVal = sliderToValue(parseFloat(maxSlider.value));
+      document.getElementById('windowMin').value = minVal.toFixed(2);
+      document.getElementById('windowMax').value = maxVal.toFixed(2);
+      updateRangeHighlight();
+      applyWindow(minVal, maxVal);
+    }
+
+    function syncFromInputs() {
+      const minInput = document.getElementById('windowMin');
+      const maxInput = document.getElementById('windowMax');
+      let minVal = parseFloat(minInput.value) || windowState.dataMin;
+      let maxVal = parseFloat(maxInput.value) || windowState.dataMax;
+      // Clamp to data range
+      minVal = Math.max(windowState.dataMin, Math.min(windowState.dataMax, minVal));
+      maxVal = Math.max(windowState.dataMin, Math.min(windowState.dataMax, maxVal));
+      if (minVal > maxVal) { const t = minVal; minVal = maxVal; maxVal = t; }
+      document.getElementById('rangeMin').value = valueToSlider(minVal);
+      document.getElementById('rangeMax').value = valueToSlider(maxVal);
+      updateRangeHighlight();
+      applyWindow(minVal, maxVal);
+    }
+
+    document.getElementById('rangeMin').addEventListener('input', syncFromSliders);
+    document.getElementById('rangeMax').addEventListener('input', syncFromSliders);
+    document.getElementById('windowMin').addEventListener('change', syncFromInputs);
+    document.getElementById('windowMax').addEventListener('change', syncFromInputs);
+
+    document.getElementById('resetWindow').addEventListener('click', () => {
+      if (!window.app || !window.app.nv || !window.app.nv.volumes.length) return;
+      const vol = window.app.nv.volumes[0];
+      windowState.currentMin = vol.global_min;
+      windowState.currentMax = vol.global_max;
+      document.getElementById('windowMin').value = vol.global_min.toFixed(2);
+      document.getElementById('windowMax').value = vol.global_max.toFixed(2);
+      document.getElementById('rangeMin').value = 0;
+      document.getElementById('rangeMax').value = 100;
+      updateRangeHighlight();
+      applyWindow(vol.global_min, vol.global_max);
+    });
+
+    // Update window controls when a new volume is loaded
+    function initWindowControls() {
+      if (!window.app || !window.app.nv || !window.app.nv.volumes.length) return;
+      const vol = window.app.nv.volumes[0];
+      windowState.dataMin = vol.global_min;
+      windowState.dataMax = vol.global_max;
+      windowState.currentMin = vol.cal_min;
+      windowState.currentMax = vol.cal_max;
+      document.getElementById('windowMin').value = vol.cal_min.toFixed(2);
+      document.getElementById('windowMax').value = vol.cal_max.toFixed(2);
+      document.getElementById('rangeMin').value = valueToSlider(vol.cal_min);
+      document.getElementById('rangeMax').value = valueToSlider(vol.cal_max);
+      updateRangeHighlight();
+    }
+
+    // Watch for volume changes
+    const volumeObserver = setInterval(() => {
+      if (window.app && window.app.nv && window.app.nv.volumes.length > 0) {
+        const vol = window.app.nv.volumes[0];
+        if (vol.global_min !== windowState.dataMin || vol.global_max !== windowState.dataMax) {
+          initWindowControls();
+        }
+      }
+    }, 500);
+
+    // Interpolation checkbox (disabled by default)
+    document.getElementById('interpolation').addEventListener('change', (e) => {
+      if (!window.app || !window.app.nv) return;
+      window.app.nv.setInterpolation(!e.target.checked); // NiiVue: true = smooth, false = nearest
+      window.app.nv.drawScene();
+    });
+
+    // Initialize interpolation off (nearest neighbor) when app loads
+    const initInterp = setInterval(() => {
+      if (window.app && window.app.nv) {
+        window.app.nv.setInterpolation(false); // false = nearest neighbor (no interpolation)
+        clearInterval(initInterp);
+      }
+    }, 500);
 
     // Clear console
     document.getElementById('clearConsole').addEventListener('click', () => {
@@ -456,6 +872,69 @@
     .stage-item .btn:last-child svg {
       width: 12px;
       height: 12px;
+    }
+
+    /* Mask preview buttons */
+    .mask-preview-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-xs);
+      margin-top: var(--space-sm);
+    }
+
+    .mask-preview-buttons .btn {
+      font-size: 0.7rem;
+      padding: var(--space-xs) var(--space-sm);
+    }
+
+    /* Mask operation buttons */
+    .mask-op-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-xs);
+    }
+
+    .mask-op-buttons .btn {
+      font-size: 0.7rem;
+      padding: var(--space-xs) var(--space-sm);
+    }
+
+    /* Drawing controls */
+    .drawing-controls {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-xs);
+    }
+
+    .brush-mode-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: var(--space-xs);
+    }
+
+    .brush-mode-buttons .btn {
+      font-size: 0.65rem;
+      padding: var(--space-xs);
+    }
+
+    .brush-mode-buttons .btn.active {
+      background: var(--color-primary);
+      color: white;
+      border-color: var(--color-primary);
+    }
+
+    .brush-size-control {
+      padding: var(--space-xs) 0;
+    }
+
+    .drawing-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-xs);
+    }
+
+    .drawing-actions .btn {
+      font-size: 0.7rem;
     }
 
     /* Ready badge style */
@@ -551,6 +1030,286 @@
       font-size: 0.7rem;
       color: var(--color-text-muted);
       white-space: nowrap;
+    }
+
+    /* Modal styles */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+      backdrop-filter: blur(2px);
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .modal {
+      background: var(--color-surface);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--color-border);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      max-width: 500px;
+      width: 90%;
+      max-height: 85vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: var(--space-md) var(--space-lg);
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .modal-header h3 {
+      margin: 0;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--color-text);
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      cursor: pointer;
+      color: var(--color-text-muted);
+      padding: 0;
+      line-height: 1;
+      transition: color 0.15s;
+    }
+
+    .modal-close:hover {
+      color: var(--color-text);
+    }
+
+    .modal-body {
+      padding: var(--space-lg);
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: var(--space-sm);
+      padding: var(--space-md) var(--space-lg);
+      border-top: 1px solid var(--color-border);
+      background: var(--color-surface-elevated);
+    }
+
+    .settings-section {
+      margin-bottom: var(--space-lg);
+    }
+
+    .settings-section:last-child {
+      margin-bottom: 0;
+    }
+
+    .settings-section h4 {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--color-primary);
+      margin: 0 0 var(--space-sm) 0;
+      padding-bottom: var(--space-xs);
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .param-hint {
+      font-size: 0.7rem;
+      color: var(--color-text-muted);
+      margin-bottom: var(--space-xs);
+    }
+
+    .param-value-display {
+      text-align: center;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--color-primary);
+      margin-top: var(--space-xs);
+    }
+
+    /* Method settings container */
+    .method-settings {
+      margin-top: var(--space-sm);
+      padding: var(--space-sm);
+      background: var(--color-surface-elevated);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--color-border);
+    }
+
+    .method-settings .param-group:last-child {
+      margin-bottom: 0;
+    }
+
+    /* Checkbox styling */
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+
+    .checkbox-label input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+      accent-color: var(--color-primary);
+    }
+
+    /* Window controls */
+    .viewer-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--space-sm);
+      flex-wrap: wrap;
+    }
+
+    .window-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.75rem;
+    }
+
+    .window-input {
+      width: 80px;
+      max-width: 80px;
+      padding: 3px 3px;
+      font-size: 0.7rem;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      background: var(--color-surface);
+      color: var(--color-text);
+      text-align: center;
+      -moz-appearance: textfield;
+    }
+
+    .window-input::-webkit-outer-spin-button,
+    .window-input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    .window-input::placeholder {
+      color: var(--color-text-muted);
+      font-size: 0.65rem;
+    }
+
+    .window-controls .btn-sm {
+      padding: 3px 8px;
+      font-size: 0.65rem;
+    }
+
+    /* Dual range slider */
+    .range-slider-container {
+      position: relative;
+      width: 180px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+    }
+
+    .range-track {
+      position: absolute;
+      width: 100%;
+      height: 4px;
+      background: var(--color-border);
+      border-radius: 2px;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .range-selected {
+      position: absolute;
+      height: 4px;
+      background: var(--color-primary);
+      border-radius: 2px;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .range-slider {
+      position: absolute;
+      width: 100%;
+      height: 20px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: transparent;
+      pointer-events: none;
+      margin: 0;
+      z-index: 3;
+    }
+
+    .range-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      background: var(--color-primary);
+      border-radius: 50%;
+      cursor: pointer;
+      pointer-events: auto;
+      border: 2px solid white;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+      position: relative;
+      z-index: 10;
+    }
+
+    .range-slider::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      background: var(--color-primary);
+      border-radius: 50%;
+      cursor: pointer;
+      pointer-events: auto;
+      border: 2px solid white;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+    }
+
+    .range-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.15);
+    }
+
+    .range-slider::-moz-range-thumb:hover {
+      transform: scale(1.15);
+    }
+
+    .range-min {
+      z-index: 4;
+    }
+
+    .range-max {
+      z-index: 3;
+    }
+
+    .interp-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.7rem;
+      color: var(--color-text-muted);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .interp-checkbox input[type="checkbox"] {
+      width: 12px;
+      height: 12px;
+      cursor: pointer;
+      accent-color: var(--color-primary);
     }
   </style>
 </body>

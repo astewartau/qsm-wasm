@@ -3,6 +3,8 @@ class QSMApp {
     this.worker = null;
     this.workerReady = false;
     this.nv = new window.Niivue({
+      loadingText: "",
+      textHeight: 0.03,
       onLocationChange: (data) => {
         document.getElementById("intensity").innerHTML = data.string;
       }
@@ -46,6 +48,38 @@ class QSMApp {
     this.maskThreshold = 15;
     this.magnitudeData = null;  // Cached magnitude array for mask preview
     this.magnitudeMax = 0;
+
+    // Mask editing state
+    this.currentMaskData = null;      // Current edited mask (Float32Array)
+    this.originalMaskData = null;     // Original threshold-based mask for reset
+    this.maskDims = null;             // [nx, ny, nz] dimensions
+
+    // Drawing state
+    this.drawingEnabled = false;
+    this.brushMode = 'add';           // 'add' or 'remove'
+    this.brushSize = 2;
+    this.savedCrosshairWidth = 1;     // Store crosshair width when hiding
+
+    // Pipeline settings
+    this.pipelineSettings = {
+      unwrapMethod: 'romeo',  // 'romeo' or 'laplacian'
+      romeo: { weighting: 'phase_snr' },
+      backgroundRemoval: 'vsharp',  // 'vsharp' or 'smv'
+      vsharp: { maxRadius: 18, minRadius: 2, threshold: 0.05 },
+      smv: { radius: 5 },
+      dipoleInversion: 'tv',  // 'tkd', 'tikhonov', 'tv', 'rts'
+      tkd: { threshold: 0.15 },
+      tikhonov: { lambda: 0.01, reg: 'identity' },
+      tv: { lambda: 0.001, maxIter: 50, tol: 0.001 },
+      rts: { delta: 0.15, mu: 100000, rho: 10, maxIter: 20 }
+    };
+
+    // BET settings
+    this.betSettings = {
+      fractionalIntensity: 0.5,
+      iterations: 1000,
+      subdivisions: 4
+    };
 
     this.init();
   }
@@ -298,6 +332,112 @@ class QSMApp {
     if (previewMaskBtn) {
       previewMaskBtn.addEventListener('click', () => this.previewMask());
     }
+
+    // BET brain extraction button - opens settings modal
+    document.getElementById('runBET')?.addEventListener('click', () => this.openBetSettingsModal());
+
+    // Pipeline settings modal
+    document.getElementById('pipelineSettings')?.addEventListener('click', () => this.openPipelineSettingsModal());
+    document.getElementById('closePipelineSettings')?.addEventListener('click', () => this.closePipelineSettingsModal());
+    document.getElementById('resetPipelineSettings')?.addEventListener('click', () => this.resetPipelineSettings());
+    document.getElementById('savePipelineSettings')?.addEventListener('click', () => this.savePipelineSettings());
+
+    // BET settings modal
+    document.getElementById('closeBetSettings')?.addEventListener('click', () => this.closeBetSettingsModal());
+    document.getElementById('resetBetSettings')?.addEventListener('click', () => this.resetBetSettings());
+    document.getElementById('runBetWithSettings')?.addEventListener('click', () => this.runBetWithSettings());
+
+    // BET fractional intensity slider value display
+    document.getElementById('betFractionalIntensity')?.addEventListener('input', (e) => {
+      document.getElementById('betFractionalIntensityValue').textContent = e.target.value;
+    });
+
+    // Close modals on overlay click
+    document.getElementById('pipelineSettingsModal')?.addEventListener('click', (e) => {
+      if (e.target.id === 'pipelineSettingsModal') this.closePipelineSettingsModal();
+    });
+    document.getElementById('betSettingsModal')?.addEventListener('click', (e) => {
+      if (e.target.id === 'betSettingsModal') this.closeBetSettingsModal();
+    });
+
+    // Method selection dropdowns - show/hide appropriate settings
+    document.getElementById('unwrapMethod')?.addEventListener('change', (e) => {
+      const isRomeo = e.target.value === 'romeo';
+      document.getElementById('romeoSettings').style.display = isRomeo ? 'block' : 'none';
+      document.getElementById('laplacianSettings').style.display = isRomeo ? 'none' : 'block';
+    });
+
+    document.getElementById('bgRemovalMethod')?.addEventListener('change', (e) => {
+      const isVsharp = e.target.value === 'vsharp';
+      document.getElementById('vsharpSettings').style.display = isVsharp ? 'block' : 'none';
+      document.getElementById('smvSettings').style.display = isVsharp ? 'none' : 'block';
+    });
+
+    document.getElementById('dipoleMethod')?.addEventListener('change', (e) => {
+      const method = e.target.value;
+      document.getElementById('tkdSettings').style.display = method === 'tkd' ? 'block' : 'none';
+      document.getElementById('tikhonovSettings').style.display = method === 'tikhonov' ? 'block' : 'none';
+      document.getElementById('tvSettings').style.display = method === 'tv' ? 'block' : 'none';
+      document.getElementById('rtsSettings').style.display = method === 'rts' ? 'block' : 'none';
+    });
+
+    // Morphological operation buttons
+    document.getElementById('fillHoles')?.addEventListener('click', async () => {
+      this.updateOutput("Filling holes in mask...");
+      this.fillHoles3D();
+      await this.displayCurrentMask();
+      this.updateOutput("Holes filled");
+    });
+
+    document.getElementById('erodeMask')?.addEventListener('click', async () => {
+      this.updateOutput("Eroding mask...");
+      this.erodeMask3D();
+      await this.displayCurrentMask();
+      this.updateOutput("Mask eroded");
+    });
+
+    document.getElementById('dilateMask')?.addEventListener('click', async () => {
+      this.updateOutput("Dilating mask...");
+      this.dilateMask3D();
+      await this.displayCurrentMask();
+      this.updateOutput("Mask dilated");
+    });
+
+    document.getElementById('resetMask')?.addEventListener('click', async () => {
+      this.updateOutput("Clearing mask...");
+      await this.clearMask();
+      this.updateOutput("Mask cleared. Choose Threshold or BET to create a new mask.");
+    });
+
+    // Drawing controls
+    document.getElementById('enableDrawing')?.addEventListener('click', async () => {
+      await this.toggleDrawingMode();
+    });
+
+    document.getElementById('brushAdd')?.addEventListener('click', () => {
+      this.setBrushMode('add');
+    });
+
+    document.getElementById('brushRemove')?.addEventListener('click', () => {
+      this.setBrushMode('remove');
+    });
+
+    document.getElementById('brushSize')?.addEventListener('input', (e) => {
+      this.brushSize = parseInt(e.target.value);
+      document.getElementById('brushSizeValue').textContent = this.brushSize;
+      if (this.drawingEnabled) {
+        this.nv.setPenValue(this.brushMode === 'add' ? 1 : 0, false);
+        this.nv.opts.penSize = this.brushSize;
+      }
+    });
+
+    document.getElementById('undoDraw')?.addEventListener('click', () => {
+      this.nv.drawUndo();
+    });
+
+    document.getElementById('applyDrawing')?.addEventListener('click', async () => {
+      await this.applyDrawingToMask();
+    });
   }
 
   async handleMultipleFiles(event, type) {
@@ -317,14 +457,14 @@ class QSMApp {
       await this.processJsonFiles(files);
     }
 
-    // Show mask section and auto-preview when magnitude files are loaded
+    // Show mask section when magnitude files are loaded (but don't auto-generate mask)
     if (type === 'magnitude' && files.length > 0) {
       const maskSection = document.getElementById('maskSection');
       if (maskSection) {
         maskSection.style.display = 'block';
       }
-      // Auto-preview the mask so user can immediately adjust threshold
-      setTimeout(() => this.previewMask(), 100);
+      // Load magnitude into viewer for visualization
+      this.visualizeMagnitude();
     }
 
     // Update echo information
@@ -440,13 +580,19 @@ class QSMApp {
 
     const isValid = magCount === phaseCount && magCount > 0;
     const hasEchoTimes = echoTimeCount > 0;
-    const canRun = isValid && hasEchoTimes;
+    const hasMask = this.currentMaskData !== null;
+    const canRun = isValid && hasEchoTimes && hasMask;
 
     // Update echo badge
     if (echoBadge) {
-      if (canRun) {
-        echoBadge.textContent = `${magCount} echo${magCount > 1 ? 'es' : ''} ready`;
-        echoBadge.classList.add('ready');
+      if (isValid && hasEchoTimes) {
+        if (hasMask) {
+          echoBadge.textContent = `${magCount} echo${magCount > 1 ? 'es' : ''} ready`;
+          echoBadge.classList.add('ready');
+        } else {
+          echoBadge.textContent = 'Need mask';
+          echoBadge.classList.remove('ready');
+        }
       } else if (magCount > 0 || phaseCount > 0) {
         const issues = [];
         if (magCount !== phaseCount) issues.push('file mismatch');
@@ -464,7 +610,13 @@ class QSMApp {
       runButton.disabled = !canRun;
       const btnText = runButton.querySelector('span');
       if (btnText) {
-        btnText.textContent = canRun ? `Run Pipeline (${magCount} echoes)` : 'Run Pipeline';
+        if (canRun) {
+          btnText.textContent = `Run Pipeline (${magCount} echoes)`;
+        } else if (isValid && hasEchoTimes && !hasMask) {
+          btnText.textContent = 'Run Pipeline (need mask)';
+        } else {
+          btnText.textContent = 'Run Pipeline';
+        }
       }
     }
   }
@@ -560,50 +712,413 @@ class QSMApp {
 
     try {
       const threshold = (this.maskThreshold / 100) * this.magnitudeMax;
-
-      // Count voxels in mask
-      let maskCount = 0;
       const totalVoxels = this.magnitudeData.length;
-      for (let i = 0; i < totalVoxels; i++) {
-        if (this.magnitudeData[i] > threshold) maskCount++;
-      }
 
-      // Update coverage display
-      const coverage = ((maskCount / totalVoxels) * 100).toFixed(1);
-      const coverageEl = document.getElementById('maskCoverage');
-      if (coverageEl) {
-        coverageEl.textContent = `Coverage: ${maskCount.toLocaleString()} / ${totalVoxels.toLocaleString()} voxels (${coverage}%)`;
-      }
+      // Extract dimensions from NIfTI header
+      const srcView = new DataView(this.magnitudeFileBytes);
+      const nx = srcView.getInt16(42, true);  // dim[1]
+      const ny = srcView.getInt16(44, true);  // dim[2]
+      const nz = srcView.getInt16(46, true);  // dim[3]
+      this.maskDims = [nx, ny, nz];
 
-      // Create mask data
+      // Create mask data from threshold
       const maskData = new Float32Array(totalVoxels);
       for (let i = 0; i < totalVoxels; i++) {
         maskData[i] = this.magnitudeData[i] > threshold ? 1 : 0;
       }
 
-      // Remove ALL existing overlays (everything except base volume)
-      while (this.nv.volumes.length > 1) {
-        await this.nv.removeVolumeByIndex(1);
-      }
+      // Store as both current and original (for reset)
+      this.currentMaskData = maskData;
+      this.originalMaskData = new Float32Array(maskData);
 
-      // Create mask NIfTI by copying header from original file
-      const maskNifti = this.createMaskNifti(maskData);
-      const maskBlob = new Blob([maskNifti], { type: 'application/octet-stream' });
-      const maskUrl = URL.createObjectURL(maskBlob);
+      // Display the mask
+      await this.displayCurrentMask();
 
-      await this.nv.addVolumeFromUrl({
-        url: maskUrl,
-        name: 'mask_preview.nii',
-        colormap: 'red',
-        opacity: 0.5
-      });
+      // Show morphological operations panel
+      const opsPanel = document.getElementById('maskOperations');
+      if (opsPanel) opsPanel.style.display = 'block';
 
-      URL.revokeObjectURL(maskUrl);
+      // Update run button state (mask is now available)
+      this.updateEchoInfo();
 
     } catch (error) {
       console.error('Error updating mask preview:', error);
     } finally {
       this.maskUpdating = false;
+    }
+  }
+
+  async displayCurrentMask() {
+    if (!this.currentMaskData) return;
+
+    // Count voxels in mask
+    let maskCount = 0;
+    const totalVoxels = this.currentMaskData.length;
+    for (let i = 0; i < totalVoxels; i++) {
+      if (this.currentMaskData[i] > 0) maskCount++;
+    }
+
+    // Update coverage display
+    const coverage = ((maskCount / totalVoxels) * 100).toFixed(1);
+    const coverageEl = document.getElementById('maskCoverage');
+    if (coverageEl) {
+      coverageEl.textContent = `Coverage: ${maskCount.toLocaleString()} / ${totalVoxels.toLocaleString()} voxels (${coverage}%)`;
+    }
+
+    // Close any existing drawing layer
+    if (this.nv.drawBitmap) {
+      this.nv.closeDrawing();
+    }
+
+    // Remove ALL existing overlays (everything except base volume)
+    while (this.nv.volumes.length > 1) {
+      await this.nv.removeVolumeByIndex(1);
+    }
+
+    // Create mask NIfTI by copying header from original file
+    const maskNifti = this.createMaskNifti(this.currentMaskData);
+    const maskBlob = new Blob([maskNifti], { type: 'application/octet-stream' });
+    const maskUrl = URL.createObjectURL(maskBlob);
+
+    await this.nv.addVolumeFromUrl({
+      url: maskUrl,
+      name: 'mask_preview.nii',
+      colormap: 'red',
+      opacity: 0.5
+    });
+
+    URL.revokeObjectURL(maskUrl);
+  }
+
+  // 3D morphological erosion (6-connected)
+  erodeMask3D() {
+    if (!this.currentMaskData || !this.maskDims) return;
+
+    const [nx, ny, nz] = this.maskDims;
+    const src = this.currentMaskData;
+    const dst = new Float32Array(src.length);
+
+    for (let z = 0; z < nz; z++) {
+      for (let y = 0; y < ny; y++) {
+        for (let x = 0; x < nx; x++) {
+          const idx = x + y * nx + z * nx * ny;
+
+          // Check if all 6 neighbors are inside mask
+          if (src[idx] > 0) {
+            let allNeighbors = true;
+
+            // Check 6-connected neighbors
+            if (x > 0 && src[idx - 1] === 0) allNeighbors = false;
+            if (x < nx - 1 && src[idx + 1] === 0) allNeighbors = false;
+            if (y > 0 && src[idx - nx] === 0) allNeighbors = false;
+            if (y < ny - 1 && src[idx + nx] === 0) allNeighbors = false;
+            if (z > 0 && src[idx - nx * ny] === 0) allNeighbors = false;
+            if (z < nz - 1 && src[idx + nx * ny] === 0) allNeighbors = false;
+
+            dst[idx] = allNeighbors ? 1 : 0;
+          }
+        }
+      }
+    }
+
+    this.currentMaskData = dst;
+  }
+
+  // 3D morphological dilation (6-connected)
+  dilateMask3D() {
+    if (!this.currentMaskData || !this.maskDims) return;
+
+    const [nx, ny, nz] = this.maskDims;
+    const src = this.currentMaskData;
+    const dst = new Float32Array(src.length);
+
+    for (let z = 0; z < nz; z++) {
+      for (let y = 0; y < ny; y++) {
+        for (let x = 0; x < nx; x++) {
+          const idx = x + y * nx + z * nx * ny;
+
+          // Check if any of 6 neighbors is in mask
+          if (src[idx] > 0) {
+            dst[idx] = 1;
+          } else {
+            let anyNeighbor = false;
+
+            if (x > 0 && src[idx - 1] > 0) anyNeighbor = true;
+            if (x < nx - 1 && src[idx + 1] > 0) anyNeighbor = true;
+            if (y > 0 && src[idx - nx] > 0) anyNeighbor = true;
+            if (y < ny - 1 && src[idx + nx] > 0) anyNeighbor = true;
+            if (z > 0 && src[idx - nx * ny] > 0) anyNeighbor = true;
+            if (z < nz - 1 && src[idx + nx * ny] > 0) anyNeighbor = true;
+
+            dst[idx] = anyNeighbor ? 1 : 0;
+          }
+        }
+      }
+    }
+
+    this.currentMaskData = dst;
+  }
+
+  // Fill holes in 3D mask using flood fill from edges
+  fillHoles3D() {
+    if (!this.currentMaskData || !this.maskDims) return;
+
+    const [nx, ny, nz] = this.maskDims;
+    const mask = this.currentMaskData;
+
+    // Create a "visited from outside" array
+    const outside = new Uint8Array(mask.length);
+
+    // Use a queue for flood fill
+    const queue = [];
+
+    // Seed from all boundary voxels that are outside the mask
+    // X boundaries
+    for (let z = 0; z < nz; z++) {
+      for (let y = 0; y < ny; y++) {
+        const idx0 = 0 + y * nx + z * nx * ny;
+        const idx1 = (nx - 1) + y * nx + z * nx * ny;
+        if (mask[idx0] === 0 && !outside[idx0]) { outside[idx0] = 1; queue.push(idx0); }
+        if (mask[idx1] === 0 && !outside[idx1]) { outside[idx1] = 1; queue.push(idx1); }
+      }
+    }
+    // Y boundaries
+    for (let z = 0; z < nz; z++) {
+      for (let x = 0; x < nx; x++) {
+        const idx0 = x + 0 * nx + z * nx * ny;
+        const idx1 = x + (ny - 1) * nx + z * nx * ny;
+        if (mask[idx0] === 0 && !outside[idx0]) { outside[idx0] = 1; queue.push(idx0); }
+        if (mask[idx1] === 0 && !outside[idx1]) { outside[idx1] = 1; queue.push(idx1); }
+      }
+    }
+    // Z boundaries
+    for (let y = 0; y < ny; y++) {
+      for (let x = 0; x < nx; x++) {
+        const idx0 = x + y * nx + 0 * nx * ny;
+        const idx1 = x + y * nx + (nz - 1) * nx * ny;
+        if (mask[idx0] === 0 && !outside[idx0]) { outside[idx0] = 1; queue.push(idx0); }
+        if (mask[idx1] === 0 && !outside[idx1]) { outside[idx1] = 1; queue.push(idx1); }
+      }
+    }
+
+    // Flood fill from boundary
+    const nxy = nx * ny;
+    while (queue.length > 0) {
+      const idx = queue.shift();
+      const x = idx % nx;
+      const y = Math.floor((idx % nxy) / nx);
+      const z = Math.floor(idx / nxy);
+
+      // Check 6-connected neighbors
+      const neighbors = [];
+      if (x > 0) neighbors.push(idx - 1);
+      if (x < nx - 1) neighbors.push(idx + 1);
+      if (y > 0) neighbors.push(idx - nx);
+      if (y < ny - 1) neighbors.push(idx + nx);
+      if (z > 0) neighbors.push(idx - nxy);
+      if (z < nz - 1) neighbors.push(idx + nxy);
+
+      for (const nidx of neighbors) {
+        if (mask[nidx] === 0 && !outside[nidx]) {
+          outside[nidx] = 1;
+          queue.push(nidx);
+        }
+      }
+    }
+
+    // Fill holes: set all non-outside, non-mask voxels to 1
+    const result = new Float32Array(mask.length);
+    for (let i = 0; i < mask.length; i++) {
+      result[i] = (mask[i] > 0 || !outside[i]) ? 1 : 0;
+    }
+
+    this.currentMaskData = result;
+  }
+
+  // Clear mask completely
+  async clearMask() {
+    this.currentMaskData = null;
+    this.originalMaskData = null;
+
+    // Close any drawing layer
+    if (this.nv.drawBitmap) {
+      this.nv.closeDrawing();
+    }
+
+    // Remove mask overlay (keep only base volume)
+    while (this.nv.volumes.length > 1) {
+      await this.nv.removeVolumeByIndex(1);
+    }
+
+    // Update coverage display
+    const coverageEl = document.getElementById('maskCoverage');
+    if (coverageEl) {
+      coverageEl.textContent = 'No mask';
+    }
+
+    // Update run button state (mask no longer available)
+    this.updateEchoInfo();
+  }
+
+  // Toggle drawing mode on/off
+  async toggleDrawingMode() {
+    this.drawingEnabled = !this.drawingEnabled;
+
+    const enableBtn = document.getElementById('enableDrawing');
+    const addBtn = document.getElementById('brushAdd');
+    const removeBtn = document.getElementById('brushRemove');
+    const sizeControl = document.getElementById('brushSizeControl');
+    const actionsDiv = document.getElementById('drawingActions');
+
+    if (this.drawingEnabled) {
+      // Need mask data and base volume
+      if (!this.currentMaskData || this.nv.volumes.length === 0) {
+        this.updateOutput("Please preview mask first before drawing");
+        this.drawingEnabled = false;
+        return;
+      }
+
+      // Enable drawing UI
+      enableBtn.classList.add('active');
+      addBtn.disabled = false;
+      removeBtn.disabled = false;
+      sizeControl.style.display = 'block';
+      actionsDiv.style.display = 'grid';
+
+      // Save current crosshair width and hide it
+      this.savedCrosshairWidth = this.nv.opts.crosshairWidth;
+      this.nv.opts.crosshairWidth = 0;
+      this.nv.drawScene();  // Redraw to hide crosshair
+
+      // Remove mask overlay - we'll use drawing layer instead
+      while (this.nv.volumes.length > 1) {
+        await this.nv.removeVolumeByIndex(1);
+      }
+
+      // Create drawing and load current mask into it
+      this.nv.createEmptyDrawing();
+
+      // Copy current mask to drawing bitmap
+      const totalVoxels = this.currentMaskData.length;
+      for (let i = 0; i < totalVoxels; i++) {
+        this.nv.drawBitmap[i] = this.currentMaskData[i] > 0 ? 1 : 0;
+      }
+
+      // Refresh the drawing display
+      this.nv.refreshDrawing(true);
+
+      // Enable drawing mode
+      this.nv.setDrawingEnabled(true);
+      this.nv.opts.penSize = this.brushSize;
+      this.nv.setDrawOpacity(0.5);
+
+      // Set pen value for add mode (1)
+      this.nv.setPenValue(1, false);
+      this.brushMode = 'add';
+
+      // Update UI to show add mode active
+      addBtn.classList.add('active');
+      removeBtn.classList.remove('active');
+
+      this.updateOutput("Draw mode: DRAG to add, switch to Remove & drag to erase. Click Apply when done.");
+    } else {
+      // Disable drawing
+      enableBtn.classList.remove('active');
+      addBtn.disabled = true;
+      removeBtn.disabled = true;
+      addBtn.classList.remove('active');
+      removeBtn.classList.remove('active');
+      sizeControl.style.display = 'none';
+      actionsDiv.style.display = 'none';
+
+      // Restore crosshair
+      if (this.savedCrosshairWidth !== undefined) {
+        this.nv.opts.crosshairWidth = this.savedCrosshairWidth;
+      }
+
+      this.nv.setDrawingEnabled(false);
+      this.nv.closeDrawing();
+
+      // Redisplay the mask as overlay
+      await this.displayCurrentMask();
+
+      this.updateOutput("Drawing mode disabled");
+    }
+  }
+
+  // Set brush mode (add or remove)
+  setBrushMode(mode) {
+    this.brushMode = mode;
+
+    const addBtn = document.getElementById('brushAdd');
+    const removeBtn = document.getElementById('brushRemove');
+
+    addBtn.classList.toggle('active', mode === 'add');
+    removeBtn.classList.toggle('active', mode === 'remove');
+
+    // Pen value: 1 for adding to mask, 0 for erasing from mask
+    // NiiVue uses 0 as the erase value
+    const penValue = mode === 'add' ? 1 : 0;
+    this.nv.setPenValue(penValue, false);
+
+    this.updateOutput(`Brush: ${mode === 'add' ? 'Add (paint)' : 'Remove (erase)'}`);
+  }
+
+  // Apply the drawing to the current mask
+  async applyDrawingToMask() {
+    if (!this.currentMaskData || !this.maskDims) {
+      this.updateOutput("No mask data to apply drawing to");
+      return;
+    }
+
+    try {
+      const drawBitmap = this.nv.drawBitmap;
+
+      if (!drawBitmap || drawBitmap.length === 0) {
+        this.updateOutput("No drawing to apply");
+        return;
+      }
+
+      // Copy drawing bitmap directly to mask
+      // The drawing IS the mask now, so just copy it back
+      const totalVoxels = this.currentMaskData.length;
+      let maskCount = 0;
+
+      for (let i = 0; i < Math.min(drawBitmap.length, totalVoxels); i++) {
+        this.currentMaskData[i] = drawBitmap[i] > 0 ? 1 : 0;
+        if (drawBitmap[i] > 0) maskCount++;
+      }
+
+      // Exit drawing mode and show the mask as overlay
+      this.drawingEnabled = false;
+
+      // Update UI
+      document.getElementById('enableDrawing')?.classList.remove('active');
+      document.getElementById('brushAdd').disabled = true;
+      document.getElementById('brushRemove').disabled = true;
+      document.getElementById('brushAdd')?.classList.remove('active');
+      document.getElementById('brushRemove')?.classList.remove('active');
+      document.getElementById('brushSizeControl').style.display = 'none';
+      document.getElementById('drawingActions').style.display = 'none';
+
+      // Restore crosshair
+      if (this.savedCrosshairWidth !== undefined) {
+        this.nv.opts.crosshairWidth = this.savedCrosshairWidth;
+      }
+
+      // Close drawing and display mask as overlay
+      this.nv.closeDrawing();
+      this.nv.setDrawingEnabled(false);
+      await this.displayCurrentMask();
+
+      const coverage = ((maskCount / totalVoxels) * 100).toFixed(1);
+      this.updateOutput(`Mask updated: ${maskCount.toLocaleString()} voxels (${coverage}%)`);
+
+      // Update run button state (mask may have been created/modified)
+      this.updateEchoInfo();
+    } catch (error) {
+      this.updateOutput(`Error applying drawing: ${error.message}`);
+      console.error(error);
     }
   }
 
@@ -695,7 +1210,15 @@ class QSMApp {
         }
       }
 
-      // Send to worker
+      // Prepare custom mask if available
+      let customMaskBuffer = null;
+      if (this.currentMaskData && this.magnitudeFileBytes) {
+        const maskNifti = this.createMaskNifti(this.currentMaskData);
+        customMaskBuffer = maskNifti;
+        this.updateOutput("Using custom edited mask");
+      }
+
+      // Send to worker with pipeline settings
       this.worker.postMessage({
         type: 'run',
         data: {
@@ -704,7 +1227,9 @@ class QSMApp {
           echoTimes,
           magField,
           unwrapMode,
-          maskThreshold: this.maskThreshold
+          maskThreshold: this.maskThreshold,
+          customMaskBuffer,
+          pipelineSettings: this.pipelineSettings
         }
       });
 
@@ -793,14 +1318,323 @@ class QSMApp {
     }
     console.log(message);
   }
+
+  async runBET() {
+    if (this.multiEchoFiles.magnitude.length === 0) {
+      this.updateOutput("No magnitude files uploaded - please load magnitude data first");
+      return;
+    }
+
+    try {
+      this.updateOutput("Starting BET brain extraction...");
+      this.setProgress(0.05, 'Initializing BET...');
+
+      // Initialize worker if needed
+      this.setupWorker();
+
+      // Load magnitude file if not already cached
+      if (!this.magnitudeFileBytes) {
+        const file = this.multiEchoFiles.magnitude[0].file;
+        this.magnitudeFileBytes = await file.arrayBuffer();
+      }
+
+      // Load magnitude into NiiVue to get dimensions
+      if (!this.magnitudeVolume) {
+        const file = this.multiEchoFiles.magnitude[0].file;
+        const url = URL.createObjectURL(file);
+        await this.nv.loadVolumes([{ url: url, name: file.name }]);
+        URL.revokeObjectURL(url);
+
+        if (this.nv.volumes.length > 0) {
+          this.magnitudeVolume = this.nv.volumes[0];
+          this.magnitudeData = this.magnitudeVolume.img;
+          let max = -Infinity;
+          for (let i = 0; i < this.magnitudeData.length; i++) {
+            if (this.magnitudeData[i] > max) max = this.magnitudeData[i];
+          }
+          this.magnitudeMax = max;
+        }
+      }
+
+      // Extract dimensions from NIfTI header
+      const srcView = new DataView(this.magnitudeFileBytes);
+      const nx = srcView.getInt16(42, true);
+      const ny = srcView.getInt16(44, true);
+      const nz = srcView.getInt16(46, true);
+      this.maskDims = [nx, ny, nz];
+
+      // Get voxel size
+      const dx = srcView.getFloat32(80, true);
+      const dy = srcView.getFloat32(84, true);
+      const dz = srcView.getFloat32(88, true);
+      const voxelSize = [dz || 1, dy || 1, dx || 1]; // z, y, x order for Python
+
+      this.updateOutput(`Image dimensions: ${nx}x${ny}x${nz}, voxel size: ${dx.toFixed(2)}x${dy.toFixed(2)}x${dz.toFixed(2)}mm`);
+
+      // Fetch BET code
+      const betCode = await fetch('./bet_python.py').then(r => r.text());
+
+      // Set up handler for BET messages
+      const betHandler = (e) => {
+        const { type, ...data } = e.data;
+
+        switch (type) {
+          case 'betProgress':
+            this.setProgress(data.value, data.text);
+            break;
+          case 'betLog':
+            this.updateOutput(data.message);
+            break;
+          case 'betComplete':
+            this.worker.removeEventListener('message', betHandler);
+            this.handleBETComplete(data);
+            break;
+          case 'betError':
+            this.worker.removeEventListener('message', betHandler);
+            this.updateOutput(`BET Error: ${data.message}`);
+            this.setProgress(0, 'BET Failed');
+            break;
+        }
+      };
+      this.worker.addEventListener('message', betHandler);
+
+      // Send BET request to worker with settings
+      this.worker.postMessage({
+        type: 'runBET',
+        data: {
+          magnitudeBuffer: this.magnitudeFileBytes,
+          voxelSize: voxelSize,
+          betCode: betCode,
+          fractionalIntensity: this.betSettings.fractionalIntensity,
+          iterations: this.betSettings.iterations,
+          subdivisions: this.betSettings.subdivisions
+        }
+      });
+
+    } catch (error) {
+      this.updateOutput(`BET Error: ${error.message}`);
+      this.setProgress(0, 'Failed');
+      console.error(error);
+    }
+  }
+
+  async handleBETComplete(data) {
+    try {
+      this.updateOutput("BET completed, loading mask...");
+
+      // Convert the mask data to Float32Array
+      const maskData = new Float32Array(data.maskData);
+
+      // Store as both current and original mask
+      this.currentMaskData = maskData;
+      this.originalMaskData = new Float32Array(maskData);
+
+      // Display the mask
+      await this.displayCurrentMask();
+
+      // Show morphological operations panel
+      const opsPanel = document.getElementById('maskOperations');
+      if (opsPanel) opsPanel.style.display = 'block';
+
+      // Update run button state (mask is now available)
+      this.updateEchoInfo();
+
+      this.setProgress(1.0, 'BET Complete');
+      this.updateOutput(`BET brain extraction complete. Coverage: ${data.coverage}`);
+    } catch (error) {
+      this.updateOutput(`Error displaying BET mask: ${error.message}`);
+      console.error(error);
+    }
+  }
+
+  // Pipeline Settings Modal
+  openPipelineSettingsModal() {
+    // Populate form with current settings
+
+    // Unwrap method
+    const unwrapMethod = this.pipelineSettings.unwrapMethod || 'romeo';
+    document.getElementById('unwrapMethod').value = unwrapMethod;
+    document.getElementById('romeoSettings').style.display = unwrapMethod === 'romeo' ? 'block' : 'none';
+    document.getElementById('laplacianSettings').style.display = unwrapMethod === 'laplacian' ? 'block' : 'none';
+    document.getElementById('romeoWeighting').value = this.pipelineSettings.romeo.weighting;
+
+    // Background removal method
+    document.getElementById('bgRemovalMethod').value = this.pipelineSettings.backgroundRemoval;
+    const isVsharp = this.pipelineSettings.backgroundRemoval === 'vsharp';
+    document.getElementById('vsharpSettings').style.display = isVsharp ? 'block' : 'none';
+    document.getElementById('smvSettings').style.display = isVsharp ? 'none' : 'block';
+
+    // V-SHARP settings
+    document.getElementById('vsharpMaxRadius').value = this.pipelineSettings.vsharp.maxRadius;
+    document.getElementById('vsharpMinRadius').value = this.pipelineSettings.vsharp.minRadius;
+    document.getElementById('vsharpThreshold').value = this.pipelineSettings.vsharp.threshold;
+
+    // SMV settings
+    document.getElementById('smvRadius').value = this.pipelineSettings.smv.radius;
+
+    // Dipole inversion method
+    const dipoleMethod = this.pipelineSettings.dipoleInversion;
+    document.getElementById('dipoleMethod').value = dipoleMethod;
+    document.getElementById('tkdSettings').style.display = dipoleMethod === 'tkd' ? 'block' : 'none';
+    document.getElementById('tikhonovSettings').style.display = dipoleMethod === 'tikhonov' ? 'block' : 'none';
+    document.getElementById('tvSettings').style.display = dipoleMethod === 'tv' ? 'block' : 'none';
+    document.getElementById('rtsSettings').style.display = dipoleMethod === 'rts' ? 'block' : 'none';
+
+    // TKD settings
+    document.getElementById('tkdThreshold').value = this.pipelineSettings.tkd.threshold;
+
+    // Tikhonov settings
+    document.getElementById('tikhLambda').value = this.pipelineSettings.tikhonov.lambda;
+    document.getElementById('tikhReg').value = this.pipelineSettings.tikhonov.reg;
+
+    // TV-ADMM settings
+    document.getElementById('tvLambda').value = this.pipelineSettings.tv.lambda;
+    document.getElementById('tvMaxIter').value = this.pipelineSettings.tv.maxIter;
+    document.getElementById('tvTol').value = this.pipelineSettings.tv.tol;
+
+    // RTS settings
+    document.getElementById('rtsDelta').value = this.pipelineSettings.rts.delta;
+    document.getElementById('rtsMu').value = this.pipelineSettings.rts.mu;
+    document.getElementById('rtsRho').value = this.pipelineSettings.rts.rho;
+    document.getElementById('rtsMaxIter').value = this.pipelineSettings.rts.maxIter;
+
+    document.getElementById('pipelineSettingsModal').classList.add('active');
+  }
+
+  closePipelineSettingsModal() {
+    document.getElementById('pipelineSettingsModal').classList.remove('active');
+  }
+
+  resetPipelineSettings() {
+    // Reset to defaults
+
+    // Unwrap method
+    document.getElementById('unwrapMethod').value = 'romeo';
+    document.getElementById('romeoSettings').style.display = 'block';
+    document.getElementById('laplacianSettings').style.display = 'none';
+    document.getElementById('romeoWeighting').value = 'phase_snr';
+
+    // Background removal
+    document.getElementById('bgRemovalMethod').value = 'vsharp';
+    document.getElementById('vsharpSettings').style.display = 'block';
+    document.getElementById('smvSettings').style.display = 'none';
+    document.getElementById('vsharpMaxRadius').value = 18;
+    document.getElementById('vsharpMinRadius').value = 2;
+    document.getElementById('vsharpThreshold').value = 0.05;
+    document.getElementById('smvRadius').value = 5;
+
+    // Dipole inversion - default to TV-ADMM
+    document.getElementById('dipoleMethod').value = 'tv';
+    document.getElementById('tkdSettings').style.display = 'none';
+    document.getElementById('tikhonovSettings').style.display = 'none';
+    document.getElementById('tvSettings').style.display = 'block';
+    document.getElementById('rtsSettings').style.display = 'none';
+
+    // TKD
+    document.getElementById('tkdThreshold').value = 0.15;
+
+    // Tikhonov
+    document.getElementById('tikhLambda').value = 0.01;
+    document.getElementById('tikhReg').value = 'identity';
+
+    // TV-ADMM
+    document.getElementById('tvLambda').value = 0.001;
+    document.getElementById('tvMaxIter').value = 50;
+    document.getElementById('tvTol').value = 0.001;
+
+    // RTS
+    document.getElementById('rtsDelta').value = 0.15;
+    document.getElementById('rtsMu').value = 100000;
+    document.getElementById('rtsRho').value = 10;
+    document.getElementById('rtsMaxIter').value = 20;
+  }
+
+  savePipelineSettings() {
+    // Save settings from form
+    this.pipelineSettings = {
+      unwrapMethod: document.getElementById('unwrapMethod').value,
+      romeo: {
+        weighting: document.getElementById('romeoWeighting').value
+      },
+      backgroundRemoval: document.getElementById('bgRemovalMethod').value,
+      vsharp: {
+        maxRadius: parseFloat(document.getElementById('vsharpMaxRadius').value),
+        minRadius: parseFloat(document.getElementById('vsharpMinRadius').value),
+        threshold: parseFloat(document.getElementById('vsharpThreshold').value)
+      },
+      smv: {
+        radius: parseFloat(document.getElementById('smvRadius').value)
+      },
+      dipoleInversion: document.getElementById('dipoleMethod').value,
+      tkd: {
+        threshold: parseFloat(document.getElementById('tkdThreshold').value)
+      },
+      tikhonov: {
+        lambda: parseFloat(document.getElementById('tikhLambda').value),
+        reg: document.getElementById('tikhReg').value
+      },
+      tv: {
+        lambda: parseFloat(document.getElementById('tvLambda').value),
+        maxIter: parseInt(document.getElementById('tvMaxIter').value),
+        tol: parseFloat(document.getElementById('tvTol').value)
+      },
+      rts: {
+        delta: parseFloat(document.getElementById('rtsDelta').value),
+        mu: parseFloat(document.getElementById('rtsMu').value),
+        rho: parseFloat(document.getElementById('rtsRho').value),
+        maxIter: parseInt(document.getElementById('rtsMaxIter').value)
+      }
+    };
+
+    this.closePipelineSettingsModal();
+    this.updateOutput("Pipeline settings saved");
+  }
+
+  // BET Settings Modal
+  openBetSettingsModal() {
+    if (this.multiEchoFiles.magnitude.length === 0) {
+      this.updateOutput("No magnitude files uploaded - please load magnitude data first");
+      return;
+    }
+
+    // Populate form with current settings
+    document.getElementById('betFractionalIntensity').value = this.betSettings.fractionalIntensity;
+    document.getElementById('betFractionalIntensityValue').textContent = this.betSettings.fractionalIntensity;
+    document.getElementById('betIterations').value = this.betSettings.iterations;
+    document.getElementById('betSubdivisions').value = this.betSettings.subdivisions;
+
+    document.getElementById('betSettingsModal').classList.add('active');
+  }
+
+  closeBetSettingsModal() {
+    document.getElementById('betSettingsModal').classList.remove('active');
+  }
+
+  resetBetSettings() {
+    // Reset to defaults
+    document.getElementById('betFractionalIntensity').value = 0.5;
+    document.getElementById('betFractionalIntensityValue').textContent = '0.5';
+    document.getElementById('betIterations').value = 1000;
+    document.getElementById('betSubdivisions').value = 4;
+  }
+
+  runBetWithSettings() {
+    // Save settings from form
+    this.betSettings = {
+      fractionalIntensity: parseFloat(document.getElementById('betFractionalIntensity').value),
+      iterations: parseInt(document.getElementById('betIterations').value),
+      subdivisions: parseInt(document.getElementById('betSubdivisions').value)
+    };
+
+    this.closeBetSettingsModal();
+    this.runBET();
+  }
 }
 
 // Initialize the app - this will be called after NiiVue is loaded by the module script
-let app;
-
 function initQSMApp() {
   console.log('Initializing QSM App with NiiVue:', window.Niivue);
-  app = new QSMApp();
+  window.app = new QSMApp();
 }
 
 // If the script loads after DOM is ready, initialize immediately
