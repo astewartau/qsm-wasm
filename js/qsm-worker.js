@@ -17,9 +17,37 @@ function postLog(message) {
   self.postMessage({ type: 'log', message });
 }
 
-// Post results to main thread
-function postResult(stage, data) {
-  self.postMessage({ type: 'result', stage, data });
+// Send intermediate stage data for live display
+async function sendStageData(stage, dataName, description) {
+  try {
+    await pyodide.runPython(`
+import nibabel as nib
+import tempfile
+import os
+
+# Get the data
+_stage_data = ${dataName}
+print(f"Sending {${JSON.stringify(description)}}: shape {_stage_data.shape}")
+
+# Create NIfTI file
+_nii_img = nib.Nifti1Image(_stage_data, affine_matrix, header_info)
+
+# Save to bytes
+_temp_path = '/tmp/stage_output.nii'
+_nii_img.to_filename(_temp_path)
+
+# Read the file as bytes
+with open(_temp_path, 'rb') as f:
+    _stage_bytes = f.read()
+
+# Clean up
+os.remove(_temp_path)
+`);
+    const stageBytes = pyodide.globals.get('_stage_bytes').toJs();
+    self.postMessage({ type: 'stageData', stage, data: stageBytes, description });
+  } catch (error) {
+    postLog(`Warning: Could not send ${stage} data: ${error.message}`);
+  }
 }
 
 // Post error to main thread
@@ -34,13 +62,11 @@ function postComplete(results) {
 
 async function initializePyodide() {
   postLog("Initializing Pyodide...");
-  postProgress(0.05, 'Loading Pyodide...');
 
   importScripts('https://cdn.jsdelivr.net/pyodide/v0.27.1/full/pyodide.js');
   pyodide = await loadPyodide();
 
   postLog("Installing Python packages...");
-  postProgress(0.07, 'Installing packages...');
   await pyodide.loadPackage(["numpy", "scipy", "micropip"]);
 
   postLog("Installing nibabel...");
@@ -71,14 +97,30 @@ async function runPipeline(data) {
   const unwrapMethod = pipelineSettings?.unwrapMethod || 'romeo';
   const romeoSettings = pipelineSettings?.romeo || { weighting: 'phase_snr' };
   const backgroundMethod = pipelineSettings?.backgroundRemoval || 'vsharp';
-  const vsharpSettings = pipelineSettings?.vsharp || { maxRadius: 18, minRadius: 2, threshold: 0.05 };
-  const smvSettings = pipelineSettings?.smv || { radius: 5 };
+  // Use nullish coalescing for individual values (allows dynamic defaults from app)
+  const vsharpSettings = {
+    maxRadius: pipelineSettings?.vsharp?.maxRadius ?? 18,
+    minRadius: pipelineSettings?.vsharp?.minRadius ?? 2,
+    threshold: pipelineSettings?.vsharp?.threshold ?? 0.05
+  };
+  const smvSettings = {
+    radius: pipelineSettings?.smv?.radius ?? 18
+  };
+  const ismvSettings = {
+    radius: pipelineSettings?.ismv?.radius ?? 2,
+    tol: pipelineSettings?.ismv?.tol ?? 0.001,
+    maxit: pipelineSettings?.ismv?.maxit ?? 500
+  };
+  const pdfSettings = {
+    tol: pipelineSettings?.pdf?.tol ?? 0.00001,
+    maxit: pipelineSettings?.pdf?.maxit ?? 100
+  };
   const dipoleMethod = pipelineSettings?.dipoleInversion || 'rts';
   const rtsSettings = pipelineSettings?.rts || { delta: 0.15, mu: 100000, rho: 10, maxIter: 20 };
   const mediSettings = pipelineSettings?.medi || { lambda: 1000, maxIter: 10, cgMaxIter: 100, cgTol: 0.01, edgePercent: 0.9, merit: false };
   const tkdSettings = pipelineSettings?.tkd || { threshold: 0.15 };
   const tikhonovSettings = pipelineSettings?.tikhonov || { lambda: 0.01, reg: 'identity' };
-  const tvSettings = pipelineSettings?.tv || { lambda: 0.001, maxIter: 50, tol: 0.001 };
+  const tvSettings = pipelineSettings?.tv || { lambda: 0.001, maxIter: 250, tol: 0.001 };
 
   try {
     postProgress(0.1, 'Loading data...');
@@ -387,6 +429,10 @@ print(f"B0 range: [{np.min(B0_fieldmap[processing_mask]):.1f}, {np.max(B0_fieldm
 print(f"Using first echo magnitude: {magnitude_combined.shape}")
 `);
     }
+
+    // Send B0 fieldmap for live display
+    await sendStageData('B0', 'B0_fieldmap', 'B0 Field Map (Hz)');
+
     } // End of if (!actuallySkipUnwrap)
 
     // Check if we can skip background removal (cached data exists)
@@ -530,6 +576,147 @@ def smv_background_removal(fieldmap, mask, voxel_size, radius=5.0):
 
     return local_field, eroded_mask
 
+def ismv_background_removal(fieldmap, mask, voxel_size, radius=5.0, tol=1e-3, maxit=500):
+    """Iterative SMV background field removal"""
+    print(f"iSMV background removal: radius={radius:.1f}mm, tol={tol}, maxit={maxit}")
+    shape = fieldmap.shape
+
+    # Create SMV kernel
+    S = create_smv_kernel_kspace(shape, voxel_size, radius)
+
+    # Erode mask using SMV
+    M = np.fft.fftn(mask.astype(np.float64))
+    eroded = np.real(np.fft.ifftn(S * M))
+    eroded_mask = eroded > 0.999
+
+    # Boundary mask (original mask minus eroded)
+    boundary_mask = mask & ~eroded_mask
+
+    # Initialize
+    f = fieldmap.copy()
+    f0 = eroded_mask * f
+    bc = boundary_mask * fieldmap  # Boundary correction term
+
+    nr = np.linalg.norm(f0)
+    eps = tol * nr
+
+    print(f"  Initial residual norm: {nr:.6f}, target: {eps:.6f}")
+
+    for i in range(maxit):
+        if nr <= eps:
+            print(f"  Converged at iteration {i}")
+            break
+
+        # Apply SMV convolution
+        F = np.fft.fftn(f)
+        f = np.real(np.fft.ifftn(S * F))
+
+        # Apply mask and add boundary correction
+        f = eroded_mask * f + bc
+
+        # Compute residual
+        diff = f0 - f
+        nr = np.linalg.norm(diff)
+        f0 = f.copy()
+
+        if (i + 1) % 50 == 0:
+            print(f"  Iteration {i+1}: residual = {nr:.6f}")
+
+        try:
+            js_bg_progress(i + 1, maxit)
+        except:
+            pass
+
+    # Compute local field: original - background
+    local_field = (fieldmap - f) * eroded_mask
+
+    print(f"  Final iteration: {min(i+1, maxit)}, residual: {nr:.6f}")
+    return local_field, eroded_mask
+
+def pdf_background_removal(fieldmap, mask, voxel_size, bdir=(0, 0, 1), tol=1e-5, maxit=None):
+    """PDF (Projection onto Dipole Fields) background removal using LSMR"""
+    from scipy.sparse.linalg import LinearOperator, lsmr
+
+    shape = fieldmap.shape
+    n_voxels = np.prod(shape)
+
+    if maxit is None:
+        maxit = int(np.ceil(np.sqrt(n_voxels)))
+
+    print(f"PDF background removal: tol={tol}, maxit={maxit}")
+
+    # Create dipole kernel
+    nx, ny, nz = shape
+    dx, dy, dz = voxel_size
+    kx = np.fft.fftfreq(nx, dx)
+    ky = np.fft.fftfreq(ny, dy)
+    kz = np.fft.fftfreq(nz, dz)
+    KX, KY, KZ = np.meshgrid(kx, ky, kz, indexing='ij')
+
+    bdir = np.array(bdir, dtype=np.float64)
+    bdir = bdir / np.linalg.norm(bdir)
+    k_dot_b = KX * bdir[0] + KY * bdir[1] + KZ * bdir[2]
+    k2 = KX**2 + KY**2 + KZ**2
+    k2[0, 0, 0] = 1e-12
+    D = 1/3 - (k_dot_b**2) / k2
+    D[0, 0, 0] = 0
+
+    # Background mask (outside ROI)
+    bg_mask = ~mask
+
+    # Masked weights (inside ROI)
+    W = mask.astype(np.float64)
+
+    def A_forward(v):
+        \"\"\"A = W * D * bg_mask\"\"\"
+        v_3d = v.reshape(shape)
+        # Apply background mask
+        x = bg_mask * v_3d
+        # Apply dipole convolution
+        F = np.fft.fftn(x)
+        x = np.real(np.fft.ifftn(D * F))
+        # Apply ROI mask (weights)
+        x = W * x
+        return x.ravel()
+
+    def A_adjoint(u):
+        \"\"\"A^T = bg_mask * D * W\"\"\"
+        u_3d = u.reshape(shape)
+        # Apply ROI mask
+        x = W * u_3d
+        # Apply dipole convolution (D is real, so D^T = D)
+        F = np.fft.fftn(x)
+        x = np.real(np.fft.ifftn(D * F))
+        # Apply background mask
+        x = bg_mask * x
+        return x.ravel()
+
+    A = LinearOperator(
+        shape=(n_voxels, n_voxels),
+        matvec=A_forward,
+        rmatvec=A_adjoint,
+        dtype=np.float64
+    )
+
+    # Right-hand side: W * fieldmap
+    b = (W * fieldmap).ravel()
+
+    print("  Running LSMR solver...")
+    result = lsmr(A, b, atol=tol, btol=tol, maxiter=maxit)
+    x_bg = result[0].reshape(shape)
+    iterations = result[2]
+    print(f"  LSMR completed in {iterations} iterations")
+
+    # Background field = D * (bg_mask * x)
+    bg_field_source = bg_mask * x_bg
+    F = np.fft.fftn(bg_field_source)
+    background_field = np.real(np.fft.ifftn(D * F))
+
+    # Local field = (fieldmap - background) * mask
+    local_field = (fieldmap - background_field) * mask
+
+    return local_field, mask
+
 # Create processing mask - use custom mask if provided, otherwise threshold
 if has_custom_mask:
     print("Loading custom edited mask...")
@@ -567,6 +754,25 @@ if bg_method == 'vsharp':
         fieldmap, processing_mask, voxel_size=voxel_size,
         radii=radii, threshold=vsharp_threshold
     )
+elif bg_method == 'ismv':
+    print("Running iSMV background removal...")
+    ismv_radius = ${ismvSettings.radius}
+    ismv_tol = ${ismvSettings.tol}
+    ismv_maxit = ${ismvSettings.maxit}
+    print(f"iSMV settings: radius={ismv_radius}mm, tol={ismv_tol}, maxit={ismv_maxit}")
+    local_fieldmap, eroded_mask = ismv_background_removal(
+        fieldmap, processing_mask, voxel_size=voxel_size,
+        radius=ismv_radius, tol=ismv_tol, maxit=ismv_maxit
+    )
+elif bg_method == 'pdf':
+    print("Running PDF background removal...")
+    pdf_tol = ${pdfSettings.tol}
+    pdf_maxit = ${pdfSettings.maxit}
+    print(f"PDF settings: tol={pdf_tol}, maxit={pdf_maxit}")
+    local_fieldmap, eroded_mask = pdf_background_removal(
+        fieldmap, processing_mask, voxel_size=voxel_size,
+        tol=pdf_tol, maxit=pdf_maxit
+    )
 else:  # smv
     print("Running SMV background removal...")
     smv_radius = ${smvSettings.radius}
@@ -583,7 +789,12 @@ print(f"Eroded mask coverage: {np.sum(processing_mask)}/{processing_mask.size} v
 print(f"Local field range: [{np.min(local_fieldmap[processing_mask]):.1f}, {np.max(local_fieldmap[processing_mask]):.1f}] Hz")
 print("Background removal completed!")
 `);
-    } // End of if (!actuallySkipBgRemoval)
+    }
+
+    // Send local fieldmap for live display
+    await sendStageData('bgRemoved', 'local_fieldmap', 'Local Field Map (Hz)');
+
+    // End of if (!actuallySkipBgRemoval)
 
     postProgress(0.8, 'Dipole inversion...');
     postLog(`Running ${dipoleMethod.toUpperCase()} dipole inversion...`);
@@ -1087,12 +1298,25 @@ else:  # rts (default)
         delta=rts_delta, mu=rts_mu, rho=rts_rho, maxit=rts_maxiter
     )
 
-print(f"QSM result range: [{np.min(qsm_result[processing_mask]):.4f}, {np.max(qsm_result[processing_mask]):.4f}]")
+print(f"QSM result range (raw): [{np.min(qsm_result[processing_mask]):.4f}, {np.max(qsm_result[processing_mask]):.4f}]")
+
+# Scale to ppm: χ (ppm) = χ_raw / (γ × B0) × 1e6
+# The dipole inversion solves D*χ = f where f is in Hz
+# Physical relationship: f = γ × B0 × D × χ, so χ = f / (γ × B0 × D)
+# γ (proton gyromagnetic ratio) = 42.576 MHz/T
+gamma = 42.576e6  # Hz/T
+B0_tesla = ${magField}
+qsm_result = qsm_result / (gamma * B0_tesla) * 1e6  # Convert to ppm
+
+print(f"QSM result range (ppm): [{np.min(qsm_result[processing_mask]):.4f}, {np.max(qsm_result[processing_mask]):.4f}] ppm")
 print("Dipole inversion completed!")
 
 # Final cleanup
 qsm_result[~processing_mask] = 0
 `);
+
+    // Send QSM result for live display
+    await sendStageData('final', 'qsm_result', 'QSM Result (ppm)');
 
     postProgress(1.0, 'Complete');
     postLog("Pipeline completed successfully!");

@@ -53,6 +53,7 @@ class QSMApp {
     this.currentMaskData = null;      // Current edited mask (Float32Array)
     this.originalMaskData = null;     // Original threshold-based mask for reset
     this.maskDims = null;             // [nx, ny, nz] dimensions
+    this.voxelSize = null;            // [dx, dy, dz] in mm
 
     // Drawing state
     this.drawingEnabled = false;
@@ -60,14 +61,16 @@ class QSMApp {
     this.brushSize = 2;
     this.savedCrosshairWidth = 1;     // Store crosshair width when hiding
 
-    // Pipeline settings
+    // Pipeline settings (null values = calculate from voxel size)
     this.pipelineSettings = {
       unwrapMethod: 'romeo',  // 'romeo' or 'laplacian'
       unwrapMode: 'individual',  // 'individual' or 'temporal'
       romeo: { weighting: 'phase_snr' },
-      backgroundRemoval: 'vsharp',  // 'vsharp' or 'smv'
-      vsharp: { maxRadius: 18, minRadius: 2, threshold: 0.05 },
-      smv: { radius: 5 },
+      backgroundRemoval: 'vsharp',  // 'vsharp', 'smv', 'ismv', 'pdf'
+      vsharp: { maxRadius: null, minRadius: null, threshold: 0.05 },
+      smv: { radius: null },
+      ismv: { radius: null, tol: 0.001, maxit: 500 },
+      pdf: { tol: 0.00001, maxit: null },
       dipoleInversion: 'tv',  // 'tkd', 'tikhonov', 'tv', 'rts'
       tkd: { threshold: 0.15 },
       tikhonov: { lambda: 0.01, reg: 'identity' },
@@ -86,6 +89,9 @@ class QSMApp {
     this.lastRunSettings = null;
     this.pipelineHasRun = false;
 
+    // Pipeline running state
+    this.pipelineRunning = false;
+
     this.init();
   }
 
@@ -101,6 +107,9 @@ class QSMApp {
     this.updateFileList('json', []);
 
     this.updateOutput("Ready. Upload magnitude, phase, and JSON files for each echo.");
+
+    // Start loading Pyodide in the background immediately
+    this.initializeWorker();
   }
 
   setupWorker() {
@@ -123,26 +132,39 @@ class QSMApp {
         case 'error':
           this.updateOutput(`Error: ${data.message}`);
           this.setProgress(0, 'Failed');
+          this.pipelineRunning = false;
+          document.getElementById('cancelPipeline').disabled = true;
+          this.updateEchoInfo(); // Re-enable run button if valid
           break;
 
         case 'initialized':
           this.workerReady = true;
-          this.updateOutput("Pyodide initialized in worker");
+          this.updateOutput("Pyodide ready");
           break;
 
         case 'complete':
           this.updateOutput("Pipeline completed successfully!");
           this.showStageButtons();
-          this.showStage('final'); // Auto-display QSM result
+          // Enable magnitude, phase, and mask buttons (available after pipeline completes)
+          this.enableStageButtons('magnitude');
+          this.enableStageButtons('phase');
+          this.enableStageButtons('mask');
           // Save settings for intelligent caching on next run
           this.lastRunSettings = JSON.parse(JSON.stringify(this.pipelineSettings));
           this.pipelineHasRun = true;
+          this.pipelineRunning = false;
+          document.getElementById('cancelPipeline').disabled = true;
+          this.updateEchoInfo(); // Re-enable run button
           break;
 
         case 'stageData':
+          // Handle both live stage updates and explicit requests
           if (this.pendingStageResolve) {
             this.pendingStageResolve(data);
             this.pendingStageResolve = null;
+          } else if (this.pipelineRunning) {
+            // Live update during pipeline - display immediately
+            this.displayLiveStageData(data);
           }
           break;
       }
@@ -151,6 +173,9 @@ class QSMApp {
     this.worker.onerror = (e) => {
       this.updateOutput(`Worker error: ${e.message}`);
       console.error('Worker error:', e);
+      this.pipelineRunning = false;
+      document.getElementById('cancelPipeline').disabled = true;
+      this.updateEchoInfo(); // Re-enable run button if valid
     };
   }
 
@@ -301,6 +326,7 @@ class QSMApp {
 
     // Processing buttons
     document.getElementById('run').addEventListener('click', () => this.openPipelineSettingsModal());
+    document.getElementById('cancelPipeline')?.addEventListener('click', () => this.cancelPipeline());
     document.getElementById('vis_magnitude').addEventListener('click', () => this.visualizeMagnitude());
     document.getElementById('vis_phase').addEventListener('click', () => this.visualizePhase());
 
@@ -379,9 +405,11 @@ class QSMApp {
     });
 
     document.getElementById('bgRemovalMethod')?.addEventListener('change', (e) => {
-      const isVsharp = e.target.value === 'vsharp';
-      document.getElementById('vsharpSettings').style.display = isVsharp ? 'block' : 'none';
-      document.getElementById('smvSettings').style.display = isVsharp ? 'none' : 'block';
+      const method = e.target.value;
+      document.getElementById('vsharpSettings').style.display = method === 'vsharp' ? 'block' : 'none';
+      document.getElementById('smvSettings').style.display = method === 'smv' ? 'block' : 'none';
+      document.getElementById('ismvSettings').style.display = method === 'ismv' ? 'block' : 'none';
+      document.getElementById('pdfSettings').style.display = method === 'pdf' ? 'block' : 'none';
     });
 
     document.getElementById('dipoleMethod')?.addEventListener('change', (e) => {
@@ -468,17 +496,24 @@ class QSMApp {
       await this.processJsonFiles(files);
     }
 
-    // Enable mask section when magnitude files are loaded (but don't auto-generate mask)
-    if (type === 'magnitude' && files.length > 0) {
-      const maskSection = document.getElementById('maskSection');
-      if (maskSection) {
-        maskSection.classList.remove('section-disabled');
+    // Enable preview buttons when files are loaded
+    if (type === 'magnitude') {
+      document.getElementById('vis_magnitude').disabled = files.length === 0;
+      if (files.length > 0) {
+        const maskSection = document.getElementById('maskSection');
+        if (maskSection) {
+          maskSection.classList.remove('section-disabled');
+        }
+        // Enable mask buttons
+        document.getElementById('previewMask')?.removeAttribute('disabled');
+        document.getElementById('runBET')?.removeAttribute('disabled');
+        // Load magnitude into viewer for visualization
+        this.visualizeMagnitude();
       }
-      // Enable mask buttons
-      document.getElementById('previewMask')?.removeAttribute('disabled');
-      document.getElementById('runBET')?.removeAttribute('disabled');
-      // Load magnitude into viewer for visualization
-      this.visualizeMagnitude();
+    }
+
+    if (type === 'phase') {
+      document.getElementById('vis_phase').disabled = files.length === 0;
     }
 
     // Update echo information
@@ -520,7 +555,7 @@ class QSMApp {
         const defaults = {
           'magnitude': 'Drop files or click',
           'phase': 'Drop files or click',
-          'json': 'Echo times (BIDS)'
+          'json': 'Drop files or click'
         };
         label.textContent = defaults[type] || 'Drop files or click';
       }
@@ -532,14 +567,21 @@ class QSMApp {
     this.updateFileList(type, this.multiEchoFiles[type]);
     this.updateEchoInfo();
 
-    // Re-disable mask section if all magnitude files are removed
-    if (type === 'magnitude' && this.multiEchoFiles.magnitude.length === 0) {
-      const maskSection = document.getElementById('maskSection');
-      if (maskSection) {
-        maskSection.classList.add('section-disabled');
+    // Re-disable buttons when files are removed
+    if (type === 'magnitude') {
+      document.getElementById('vis_magnitude').disabled = this.multiEchoFiles.magnitude.length === 0;
+      if (this.multiEchoFiles.magnitude.length === 0) {
+        const maskSection = document.getElementById('maskSection');
+        if (maskSection) {
+          maskSection.classList.add('section-disabled');
+        }
+        document.getElementById('previewMask')?.setAttribute('disabled', '');
+        document.getElementById('runBET')?.setAttribute('disabled', '');
       }
-      document.getElementById('previewMask')?.setAttribute('disabled', '');
-      document.getElementById('runBET')?.setAttribute('disabled', '');
+    }
+
+    if (type === 'phase') {
+      document.getElementById('vis_phase').disabled = this.multiEchoFiles.phase.length === 0;
     }
   }
 
@@ -603,7 +645,6 @@ class QSMApp {
     const echoTimes = this.getEchoTimesFromInputs();
     const echoTimeCount = echoTimes.length;
 
-    const echoBadge = document.getElementById('echoBadge');
     const runButton = document.getElementById('run');
 
     const isValid = magCount === phaseCount && magCount > 0;
@@ -611,43 +652,18 @@ class QSMApp {
     const hasMask = this.currentMaskData !== null;
     const canRun = isValid && hasEchoTimes && hasMask;
 
-    // Update echo badge
-    if (echoBadge) {
-      if (isValid && hasEchoTimes) {
-        if (hasMask) {
-          echoBadge.textContent = `${magCount} echo${magCount > 1 ? 'es' : ''} ready`;
-          echoBadge.classList.add('ready');
-        } else {
-          echoBadge.textContent = 'Need mask';
-          echoBadge.classList.remove('ready');
-        }
-      } else if (magCount > 0 || phaseCount > 0) {
-        const issues = [];
-        if (magCount !== phaseCount) issues.push('file mismatch');
-        if (!hasEchoTimes) issues.push('no echo times');
-        echoBadge.textContent = issues.join(', ') || 'Incomplete';
-        echoBadge.classList.remove('ready');
-      } else {
-        echoBadge.textContent = 'No files loaded';
-        echoBadge.classList.remove('ready');
-      }
-    }
-
-    // Update echo times inputs (only if JSON was just loaded, not on every update)
-    // The inputs are managed separately via populateEchoTimeInputs()
-
     // Update run button
     if (runButton) {
-      runButton.disabled = !canRun;
-      const btnText = runButton.querySelector('span');
-      if (btnText) {
-        if (canRun) {
-          btnText.textContent = `Run Pipeline (${magCount} echoes)`;
-        } else if (isValid && hasEchoTimes && !hasMask) {
-          btnText.textContent = 'Run Pipeline (need mask)';
-        } else {
-          btnText.textContent = 'Run Pipeline';
-        }
+      runButton.disabled = !canRun || this.pipelineRunning;
+    }
+
+    // Update pipeline section enabled state
+    const pipelineSection = document.getElementById('pipelineSection');
+    if (pipelineSection) {
+      if (canRun || this.pipelineRunning) {
+        pipelineSection.classList.remove('section-disabled');
+      } else {
+        pipelineSection.classList.add('section-disabled');
       }
     }
   }
@@ -794,6 +810,12 @@ class QSMApp {
       const ny = srcView.getInt16(44, true);  // dim[2]
       const nz = srcView.getInt16(46, true);  // dim[3]
       this.maskDims = [nx, ny, nz];
+
+      // Extract voxel size from NIfTI header (pixdim[1-3] at offsets 80, 84, 88)
+      const dx = srcView.getFloat32(80, true) || 1;
+      const dy = srcView.getFloat32(84, true) || 1;
+      const dz = srcView.getFloat32(88, true) || 1;
+      this.voxelSize = [dx, dy, dz];
 
       // Create mask data from threshold
       const maskData = new Float32Array(totalVoxels);
@@ -1338,6 +1360,12 @@ class QSMApp {
         this.updateOutput("Reusing cached background-removed data");
       }
 
+      // Show phase image at the start
+      await this.visualizePhase();
+
+      // Disable all stage buttons - they'll be enabled as data becomes available
+      this.disableAllStageButtons();
+
       // Send to worker with pipeline settings
       this.worker.postMessage({
         type: 'run',
@@ -1354,26 +1382,84 @@ class QSMApp {
         }
       });
 
+      // Enable cancel button and update state
+      this.pipelineRunning = true;
+      document.getElementById('cancelPipeline').disabled = false;
+      document.getElementById('run').disabled = true;
+
     } catch (error) {
       this.updateOutput(`Error: ${error.message}`);
       this.setProgress(0, 'Failed');
+      this.pipelineRunning = false;
+      document.getElementById('cancelPipeline').disabled = true;
+      this.updateEchoInfo(); // Re-enable run button if valid
       console.error(error);
     }
   }
 
+  cancelPipeline() {
+    if (!this.pipelineRunning) return;
+
+    this.updateOutput("Cancelling pipeline...");
+
+    // Terminate the worker to stop all processing
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
+      this.workerReady = false;
+    }
+
+    // Reset state
+    this.pipelineRunning = false;
+    this.setProgress(0, 'Cancelled');
+    document.getElementById('cancelPipeline').disabled = true;
+    this.updateEchoInfo(); // Re-enable run button if valid
+
+    this.updateOutput("Pipeline cancelled. Worker will be reinitialized on next run.");
+  }
+
   showStageButtons() {
     document.getElementById('stage-buttons').classList.remove('hidden');
-    this.updateDownloadButtons();
+  }
+
+  // Enable specific stage buttons when their data becomes available
+  enableStageButtons(stage) {
+    const buttonIds = {
+      'magnitude': ['showMagnitude', 'downloadMagnitude'],
+      'phase': ['showPhase', 'downloadPhase'],
+      'mask': ['showMask', 'downloadMask'],
+      'B0': ['showB0', 'downloadB0'],
+      'bgRemoved': ['showBgRemoved', 'downloadBgRemoved'],
+      'final': ['showDipoleInversed', 'downloadDipoleInversed']
+    };
+
+    const ids = buttonIds[stage];
+    if (ids) {
+      ids.forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.disabled = false;
+      });
+    }
+  }
+
+  // Disable all stage buttons (called at pipeline start)
+  disableAllStageButtons() {
+    const allButtons = [
+      'showMagnitude', 'downloadMagnitude',
+      'showPhase', 'downloadPhase',
+      'showMask', 'downloadMask',
+      'showB0', 'downloadB0',
+      'showBgRemoved', 'downloadBgRemoved',
+      'showDipoleInversed', 'downloadDipoleInversed'
+    ];
+    allButtons.forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) btn.disabled = true;
+    });
   }
 
   updateDownloadButtons() {
-    // Enable buttons based on available data
-    // This is a simplified version - in production you'd check actual data availability
-    const buttons = ['downloadMagnitude', 'downloadPhase', 'downloadMask', 'downloadB0', 'downloadBgRemoved', 'downloadDipoleInversed'];
-    buttons.forEach(id => {
-      const button = document.getElementById(id);
-      button.disabled = false; // Enable all buttons after processing
-    });
+    // Legacy method - now handled by enableStageButtons
   }
 
   async showStage(stage) {
@@ -1407,6 +1493,33 @@ class QSMApp {
 
     } catch (error) {
       this.updateOutput(`Error showing ${stage}: ${error.message}`);
+    }
+  }
+
+  // Display stage data as it arrives during pipeline processing
+  async displayLiveStageData(data) {
+    try {
+      const { stage, data: stageBytes, description } = data;
+
+      // Show the stage buttons section as soon as first result arrives
+      this.showStageButtons();
+
+      // Enable the buttons for this specific stage
+      this.enableStageButtons(stage);
+
+      // Create file from bytes
+      const blob = new Blob([stageBytes], { type: 'application/octet-stream' });
+      const file = new File([blob], `${stage}.nii`, { type: 'application/octet-stream' });
+
+      // Load in viewer
+      await this.loadAndVisualizeFile(file, description);
+
+      // Cache the result
+      this.results[stage] = { file: file, path: `${stage}.nii` };
+
+      this.updateOutput(`Displaying: ${description}`);
+    } catch (error) {
+      this.updateOutput(`Error displaying live data: ${error.message}`);
     }
   }
 
@@ -1449,6 +1562,12 @@ class QSMApp {
     try {
       this.updateOutput("Starting BET brain extraction...");
       this.setProgress(0.05, 'Initializing BET...');
+
+      // Enable pipeline section during BET
+      const pipelineSection = document.getElementById('pipelineSection');
+      if (pipelineSection) {
+        pipelineSection.classList.remove('section-disabled');
+      }
 
       // Initialize worker if needed
       this.setupWorker();
@@ -1514,6 +1633,7 @@ class QSMApp {
             this.worker.removeEventListener('message', betHandler);
             this.updateOutput(`BET Error: ${data.message}`);
             this.setProgress(0, 'BET Failed');
+            this.updateEchoInfo(); // Reset pipeline section state
             break;
         }
       };
@@ -1535,6 +1655,7 @@ class QSMApp {
     } catch (error) {
       this.updateOutput(`BET Error: ${error.message}`);
       this.setProgress(0, 'Failed');
+      this.updateEchoInfo(); // Reset pipeline section state
       console.error(error);
     }
   }
@@ -1568,9 +1689,34 @@ class QSMApp {
     }
   }
 
+  // Calculate dynamic defaults based on voxel size (matches QSM.jl)
+  getVoxelBasedDefaults() {
+    const vsz = this.voxelSize || [1, 1, 1];
+    const minVsz = Math.min(...vsz);
+    const maxVsz = Math.max(...vsz);
+
+    // Calculate mask size for PDF maxit (if available)
+    const maskSize = this.maskDims ? this.maskDims[0] * this.maskDims[1] * this.maskDims[2] : 100000;
+
+    return {
+      // V-SHARP: maxRadius = 18 * min(vsz), but we use mm directly
+      vsharpMaxRadius: Math.round(18 * minVsz),
+      vsharpMinRadius: Math.round(Math.max(1, 2 * minVsz)),
+      // SMV: radius = 18 * min(vsz) in QSM.jl for SHARP
+      smvRadius: Math.round(18 * minVsz),
+      // iSMV: radius = 2 * max(vsz)
+      ismvRadius: Math.round(2 * maxVsz),
+      // PDF: maxit = ceil(sqrt(numel(mask)))
+      pdfMaxit: Math.ceil(Math.sqrt(maskSize))
+    };
+  }
+
   // Pipeline Settings Modal
   openPipelineSettingsModal() {
-    // Populate form with current settings
+    // Get dynamic defaults based on voxel size
+    const defaults = this.getVoxelBasedDefaults();
+
+    // Populate form with current settings (or calculated defaults if null)
 
     // Unwrap method and mode
     const unwrapMethod = this.pipelineSettings.unwrapMethod || 'romeo';
@@ -1581,18 +1727,29 @@ class QSMApp {
     document.getElementById('romeoWeighting').value = this.pipelineSettings.romeo.weighting;
 
     // Background removal method
-    document.getElementById('bgRemovalMethod').value = this.pipelineSettings.backgroundRemoval;
-    const isVsharp = this.pipelineSettings.backgroundRemoval === 'vsharp';
-    document.getElementById('vsharpSettings').style.display = isVsharp ? 'block' : 'none';
-    document.getElementById('smvSettings').style.display = isVsharp ? 'none' : 'block';
+    const bgMethod = this.pipelineSettings.backgroundRemoval;
+    document.getElementById('bgRemovalMethod').value = bgMethod;
+    document.getElementById('vsharpSettings').style.display = bgMethod === 'vsharp' ? 'block' : 'none';
+    document.getElementById('smvSettings').style.display = bgMethod === 'smv' ? 'block' : 'none';
+    document.getElementById('ismvSettings').style.display = bgMethod === 'ismv' ? 'block' : 'none';
+    document.getElementById('pdfSettings').style.display = bgMethod === 'pdf' ? 'block' : 'none';
 
-    // V-SHARP settings
-    document.getElementById('vsharpMaxRadius').value = this.pipelineSettings.vsharp.maxRadius;
-    document.getElementById('vsharpMinRadius').value = this.pipelineSettings.vsharp.minRadius;
+    // V-SHARP settings (use calculated defaults if null)
+    document.getElementById('vsharpMaxRadius').value = this.pipelineSettings.vsharp.maxRadius ?? defaults.vsharpMaxRadius;
+    document.getElementById('vsharpMinRadius').value = this.pipelineSettings.vsharp.minRadius ?? defaults.vsharpMinRadius;
     document.getElementById('vsharpThreshold').value = this.pipelineSettings.vsharp.threshold;
 
     // SMV settings
-    document.getElementById('smvRadius').value = this.pipelineSettings.smv.radius;
+    document.getElementById('smvRadius').value = this.pipelineSettings.smv.radius ?? defaults.smvRadius;
+
+    // iSMV settings
+    document.getElementById('ismvRadius').value = this.pipelineSettings.ismv.radius ?? defaults.ismvRadius;
+    document.getElementById('ismvTol').value = this.pipelineSettings.ismv.tol;
+    document.getElementById('ismvMaxit').value = this.pipelineSettings.ismv.maxit;
+
+    // PDF settings
+    document.getElementById('pdfTol').value = this.pipelineSettings.pdf.tol;
+    document.getElementById('pdfMaxit').value = this.pipelineSettings.pdf.maxit ?? defaults.pdfMaxit;
 
     // Dipole inversion method
     const dipoleMethod = this.pipelineSettings.dipoleInversion;
@@ -1628,7 +1785,8 @@ class QSMApp {
   }
 
   resetPipelineSettings() {
-    // Reset to defaults
+    // Reset to defaults (using dynamic voxel-based values where applicable)
+    const defaults = this.getVoxelBasedDefaults();
 
     // Unwrap method and mode
     document.getElementById('unwrapMethod').value = 'romeo';
@@ -1641,10 +1799,21 @@ class QSMApp {
     document.getElementById('bgRemovalMethod').value = 'vsharp';
     document.getElementById('vsharpSettings').style.display = 'block';
     document.getElementById('smvSettings').style.display = 'none';
-    document.getElementById('vsharpMaxRadius').value = 18;
-    document.getElementById('vsharpMinRadius').value = 2;
+    document.getElementById('ismvSettings').style.display = 'none';
+    document.getElementById('pdfSettings').style.display = 'none';
+    document.getElementById('vsharpMaxRadius').value = defaults.vsharpMaxRadius;
+    document.getElementById('vsharpMinRadius').value = defaults.vsharpMinRadius;
     document.getElementById('vsharpThreshold').value = 0.05;
-    document.getElementById('smvRadius').value = 5;
+    document.getElementById('smvRadius').value = defaults.smvRadius;
+
+    // iSMV defaults
+    document.getElementById('ismvRadius').value = defaults.ismvRadius;
+    document.getElementById('ismvTol').value = 0.001;
+    document.getElementById('ismvMaxit').value = 500;
+
+    // PDF defaults
+    document.getElementById('pdfTol').value = 0.00001;
+    document.getElementById('pdfMaxit').value = defaults.pdfMaxit;
 
     // Dipole inversion - default to TV-ADMM
     document.getElementById('dipoleMethod').value = 'tv';
@@ -1688,6 +1857,15 @@ class QSMApp {
       },
       smv: {
         radius: parseFloat(document.getElementById('smvRadius').value)
+      },
+      ismv: {
+        radius: parseFloat(document.getElementById('ismvRadius').value),
+        tol: parseFloat(document.getElementById('ismvTol').value),
+        maxit: parseInt(document.getElementById('ismvMaxit').value)
+      },
+      pdf: {
+        tol: parseFloat(document.getElementById('pdfTol').value),
+        maxit: parseInt(document.getElementById('pdfMaxit').value)
       },
       dipoleInversion: document.getElementById('dipoleMethod').value,
       tkd: {

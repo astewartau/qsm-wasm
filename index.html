@@ -94,36 +94,16 @@
           </div>
         </div>
 
-        <!-- JSON Files -->
-        <div class="file-upload-group">
-          <label class="file-upload-label">
-            JSON Metadata <span class="count" id="jsonCount"></span>
-          </label>
-          <div class="upload-group">
-            <div class="file-upload-zone file-drop" id="jsonDrop">
-              <input type="file" id="jsonFiles" accept=".json" multiple>
-              <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                <polyline points="14 2 14 8 20 8"/>
-                <line x1="16" y1="13" x2="8" y2="13"/>
-                <line x1="16" y1="17" x2="8" y2="17"/>
-              </svg>
-              <p class="upload-text file-drop-label"><span>Echo times (BIDS)</span></p>
-            </div>
-            <div class="file-list" id="jsonList"></div>
-          </div>
-        </div>
-
         <!-- Preview Buttons -->
         <div class="preview-buttons">
-          <button class="btn btn-secondary btn-sm" id="vis_magnitude">
+          <button class="btn btn-secondary btn-sm" id="vis_magnitude" disabled>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
               <circle cx="12" cy="12" r="3"/>
             </svg>
             Mag
           </button>
-          <button class="btn btn-secondary btn-sm" id="vis_phase">
+          <button class="btn btn-secondary btn-sm" id="vis_phase" disabled>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
               <circle cx="12" cy="12" r="3"/>
@@ -142,6 +122,25 @@
           </svg>
           Parameters
         </h2>
+
+        <!-- JSON Metadata Upload -->
+        <div class="param-group">
+          <label class="param-label">
+            JSON Metadata <span class="count" id="jsonCount"></span>
+          </label>
+          <div class="upload-group compact">
+            <div class="file-upload-zone file-drop compact" id="jsonDrop">
+              <input type="file" id="jsonFiles" accept=".json" multiple>
+              <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              <p class="upload-text file-drop-label"><span>Drop files or click</span></p>
+            </div>
+            <div class="file-list" id="jsonList"></div>
+          </div>
+        </div>
 
         <div class="param-group">
           <label class="param-label" for="magField">Field Strength</label>
@@ -248,7 +247,7 @@
       </section>
 
       <!-- Progress & Run Section -->
-      <section class="sidebar-section">
+      <section class="sidebar-section section-disabled" id="pipelineSection">
         <div class="progress-container">
           <div class="progress-header">
             <span class="progress-title">Pipeline Progress</span>
@@ -256,9 +255,6 @@
           </div>
           <div class="progress-bar">
             <div class="progress-fill" id="progressFill" style="width: 0%"></div>
-          </div>
-          <div class="progress-status">
-            <span id="echoBadge">No files loaded</span>
           </div>
         </div>
 
@@ -268,6 +264,12 @@
               <polygon points="5 3 19 12 5 21 5 3"/>
             </svg>
             <span>Run Pipeline</span>
+          </button>
+          <button class="btn btn-danger" id="cancelPipeline" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            </svg>
+            <span>Cancel</span>
           </button>
         </div>
       </section>
@@ -284,7 +286,7 @@
 
         <div class="stage-buttons-grid">
           <div class="stage-item">
-            <button class="btn btn-secondary btn-sm stage-tab" id="showMagnitude">Magnitude</button>
+            <button class="btn btn-secondary btn-sm stage-tab" id="showMagnitude" disabled>Magnitude</button>
             <button class="btn btn-sm" id="downloadMagnitude" title="Download" disabled>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -295,7 +297,7 @@
           </div>
 
           <div class="stage-item">
-            <button class="btn btn-secondary btn-sm stage-tab" id="showPhase">Phase</button>
+            <button class="btn btn-secondary btn-sm stage-tab" id="showPhase" disabled>Phase</button>
             <button class="btn btn-sm" id="downloadPhase" title="Download" disabled>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -306,7 +308,7 @@
           </div>
 
           <div class="stage-item">
-            <button class="btn btn-secondary btn-sm stage-tab" id="showMask">Mask</button>
+            <button class="btn btn-secondary btn-sm stage-tab" id="showMask" disabled>Mask</button>
             <button class="btn btn-sm" id="downloadMask" title="Download" disabled>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -317,7 +319,7 @@
           </div>
 
           <div class="stage-item">
-            <button class="btn btn-secondary btn-sm stage-tab" id="showB0">B0 Field</button>
+            <button class="btn btn-secondary btn-sm stage-tab" id="showB0" disabled>B0 Field</button>
             <button class="btn btn-sm" id="downloadB0" title="Download" disabled>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -328,7 +330,7 @@
           </div>
 
           <div class="stage-item">
-            <button class="btn btn-secondary btn-sm stage-tab" id="showBgRemoved">Local Field</button>
+            <button class="btn btn-secondary btn-sm stage-tab" id="showBgRemoved" disabled>Local Field</button>
             <button class="btn btn-sm" id="downloadBgRemoved" title="Download" disabled>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -339,7 +341,7 @@
           </div>
 
           <div class="stage-item">
-            <button class="btn btn-secondary btn-sm stage-tab" id="showDipoleInversed">QSM</button>
+            <button class="btn btn-secondary btn-sm stage-tab" id="showDipoleInversed" disabled>QSM</button>
             <button class="btn btn-sm" id="downloadDipoleInversed" title="Download" disabled>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -407,10 +409,6 @@
           <button class="console-clear" id="clearConsole">Clear</button>
         </div>
         <div class="console-output" id="consoleOutput">
-          <div class="console-line">
-            <span class="console-time" id="outputTime"></span>
-            <span class="console-message" id="output">Initializing...</span>
-          </div>
         </div>
       </div>
     </main>
@@ -481,6 +479,8 @@
             <select id="bgRemovalMethod">
               <option value="vsharp" selected>V-SHARP (Variable radii)</option>
               <option value="smv">SMV (Single radius)</option>
+              <option value="ismv">iSMV (Iterative)</option>
+              <option value="pdf">PDF (Projection onto Dipole Fields)</option>
             </select>
           </div>
 
@@ -505,6 +505,40 @@
             <div class="param-group">
               <label class="param-label" for="smvRadius">Radius (mm)</label>
               <input type="number" id="smvRadius" value="5" min="1" max="20" step="1">
+            </div>
+          </div>
+
+          <!-- iSMV Settings -->
+          <div id="ismvSettings" class="method-settings" style="display: none;">
+            <div class="param-hint" style="margin-bottom: var(--space-sm); color: var(--color-text-muted);">
+              Iterative SMV - more accurate than single-pass SMV
+            </div>
+            <div class="param-group">
+              <label class="param-label" for="ismvRadius">Radius (mm)</label>
+              <input type="number" id="ismvRadius" value="5" min="1" max="20" step="1">
+            </div>
+            <div class="param-group">
+              <label class="param-label" for="ismvTol">Tolerance</label>
+              <input type="number" id="ismvTol" value="0.001" min="0.0001" max="0.01" step="0.0001">
+            </div>
+            <div class="param-group">
+              <label class="param-label" for="ismvMaxit">Max Iterations</label>
+              <input type="number" id="ismvMaxit" value="500" min="50" max="1000" step="50">
+            </div>
+          </div>
+
+          <!-- PDF Settings -->
+          <div id="pdfSettings" class="method-settings" style="display: none;">
+            <div class="param-hint" style="margin-bottom: var(--space-sm); color: var(--color-text-muted);">
+              Projects field onto space orthogonal to background dipole fields
+            </div>
+            <div class="param-group">
+              <label class="param-label" for="pdfTol">Tolerance</label>
+              <input type="number" id="pdfTol" value="0.00001" min="0.000001" max="0.001" step="0.000001">
+            </div>
+            <div class="param-group">
+              <label class="param-label" for="pdfMaxit">Max Iterations</label>
+              <input type="number" id="pdfMaxit" value="100" min="10" max="500" step="10">
             </div>
           </div>
         </div>
@@ -939,11 +973,6 @@
 
     .drawing-actions .btn {
       font-size: 0.7rem;
-    }
-
-    /* Ready badge style */
-    #echoBadge.ready {
-      color: var(--color-success);
     }
 
     /* Threshold slider */
