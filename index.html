@@ -3,10 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QSM-WASM | Quantitative Susceptibility Mapping</title>
+  <title>QSMbly | Quantitative Susceptibility Mapping</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <!-- Tagify (load before our CSS so we can override) -->
+  <link rel="stylesheet" href="https://unpkg.com/@yaireo/tagify/dist/tagify.css">
+  <script src="https://unpkg.com/@yaireo/tagify"></script>
+
+  <!-- Our styles last to override -->
   <link rel="stylesheet" href="css/modern-styles.css">
 
   <!-- NiiVue -->
@@ -28,7 +33,7 @@
             <path d="M2 12l10 5 10-5"/>
           </svg>
         </div>
-        <h1>QSM-WASM <span>Quantitative Susceptibility Mapping</span></h1>
+        <h1>QSMbly <span>Quantitative Susceptibility Mapping</span></h1>
       </div>
       <div class="header-status">
         <div class="status-indicator">
@@ -147,21 +152,18 @@
         </div>
 
         <div class="param-group">
-          <label class="param-label" for="unwrapMode">Unwrap Mode</label>
-          <select id="unwrapMode">
-            <option value="individual">Individual</option>
-            <option value="temporal">Temporal</option>
-          </select>
+          <label class="param-label">Echo Times <span class="unit-inline">(ms)</span></label>
+          <input type="text" id="echoTimesTagify" placeholder="Type values...">
         </div>
       </section>
 
       <!-- Mask Threshold Section -->
-      <section class="sidebar-section" id="maskSection" style="display: none;">
+      <section class="sidebar-section section-disabled" id="maskSection">
         <h2 class="section-title">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
           </svg>
-          Mask Threshold
+          Masking
         </h2>
 
         <div class="param-group">
@@ -176,14 +178,14 @@
         </div>
 
         <div class="mask-preview-buttons">
-          <button class="btn btn-secondary btn-sm" id="previewMask" title="Generate mask from threshold">
+          <button class="btn btn-secondary btn-sm" id="previewMask" title="Generate mask from threshold" disabled>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
               <circle cx="12" cy="12" r="3"/>
             </svg>
             Threshold
           </button>
-          <button class="btn btn-secondary btn-sm" id="runBET" title="BET brain extraction (slower but more accurate)">
+          <button class="btn btn-secondary btn-sm" id="runBET" title="BET brain extraction (slower but more accurate)" disabled>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="10"/>
               <path d="M12 8c-2.2 0-4 1.8-4 4s1.8 4 4 4 4-1.8 4-4"/>
@@ -266,12 +268,6 @@
               <polygon points="5 3 19 12 5 21 5 3"/>
             </svg>
             <span>Run Pipeline</span>
-          </button>
-          <button class="btn btn-secondary" id="pipelineSettings" title="Pipeline Settings">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="3"/>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-            </svg>
           </button>
         </div>
       </section>
@@ -421,7 +417,7 @@
 
     <!-- Footer -->
     <footer class="app-footer">
-      <span>QSM-WASM | Browser-based Quantitative Susceptibility Mapping</span>
+      <span>QSMbly | Browser-based Quantitative Susceptibility Mapping</span>
       <span>Powered by Pyodide, NiiVue &amp; ROMEO</span>
     </footer>
   </div>
@@ -443,6 +439,14 @@
             <select id="unwrapMethod">
               <option value="romeo" selected>ROMEO (Quality-guided)</option>
               <option value="laplacian">Laplacian (Fast)</option>
+            </select>
+          </div>
+
+          <div class="param-group">
+            <label class="param-label" for="unwrapMode">Multi-echo Mode</label>
+            <select id="unwrapMode">
+              <option value="individual">Individual (each echo separately)</option>
+              <option value="temporal">Temporal (use echo correlation)</option>
             </select>
           </div>
 
@@ -559,7 +563,7 @@
             </div>
             <div class="param-group">
               <label class="param-label" for="tvMaxIter">Max Iterations</label>
-              <input type="number" id="tvMaxIter" value="50" min="10" max="250" step="10">
+              <input type="number" id="tvMaxIter" value="250" min="10" max="500" step="10">
             </div>
             <div class="param-group">
               <label class="param-label" for="tvTol">Tolerance</label>
@@ -590,7 +594,7 @@
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" id="resetPipelineSettings">Reset Defaults</button>
-        <button class="btn btn-primary" id="savePipelineSettings">Save</button>
+        <button class="btn btn-primary" id="runPipelineWithSettings">Run Pipeline</button>
       </div>
     </div>
   </div>
@@ -788,14 +792,14 @@
     // Interpolation checkbox (disabled by default)
     document.getElementById('interpolation').addEventListener('change', (e) => {
       if (!window.app || !window.app.nv) return;
-      window.app.nv.setInterpolation(!e.target.checked); // NiiVue: true = smooth, false = nearest
+      window.app.nv.setInterpolation(!e.target.checked); // checked = smooth, unchecked = nearest
       window.app.nv.drawScene();
     });
 
     // Initialize interpolation off (nearest neighbor) when app loads
     const initInterp = setInterval(() => {
       if (window.app && window.app.nv) {
-        window.app.nv.setInterpolation(false); // false = nearest neighbor (no interpolation)
+        window.app.nv.setInterpolation(true); // true = nearest neighbor (no interpolation)
         clearInterval(initInterp);
       }
     }, 500);

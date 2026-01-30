@@ -63,6 +63,7 @@ class QSMApp {
     // Pipeline settings
     this.pipelineSettings = {
       unwrapMethod: 'romeo',  // 'romeo' or 'laplacian'
+      unwrapMode: 'individual',  // 'individual' or 'temporal'
       romeo: { weighting: 'phase_snr' },
       backgroundRemoval: 'vsharp',  // 'vsharp' or 'smv'
       vsharp: { maxRadius: 18, minRadius: 2, threshold: 0.05 },
@@ -70,7 +71,7 @@ class QSMApp {
       dipoleInversion: 'tv',  // 'tkd', 'tikhonov', 'tv', 'rts'
       tkd: { threshold: 0.15 },
       tikhonov: { lambda: 0.01, reg: 'identity' },
-      tv: { lambda: 0.001, maxIter: 50, tol: 0.001 },
+      tv: { lambda: 0.001, maxIter: 250, tol: 0.001 },
       rts: { delta: 0.15, mu: 100000, rho: 10, maxIter: 20 }
     };
 
@@ -80,6 +81,10 @@ class QSMApp {
       iterations: 1000,
       subdivisions: 4
     };
+
+    // Track last run settings for intelligent caching
+    this.lastRunSettings = null;
+    this.pipelineHasRun = false;
 
     this.init();
   }
@@ -128,6 +133,10 @@ class QSMApp {
         case 'complete':
           this.updateOutput("Pipeline completed successfully!");
           this.showStageButtons();
+          this.showStage('final'); // Auto-display QSM result
+          // Save settings for intelligent caching on next run
+          this.lastRunSettings = JSON.parse(JSON.stringify(this.pipelineSettings));
+          this.pipelineHasRun = true;
           break;
 
         case 'stageData':
@@ -287,8 +296,11 @@ class QSMApp {
       this.handleMultipleFiles(e, 'json');
     });
 
+    // Echo time Tagify input
+    this.setupEchoTagify();
+
     // Processing buttons
-    document.getElementById('run').addEventListener('click', () => this.runRomeoQSM());
+    document.getElementById('run').addEventListener('click', () => this.openPipelineSettingsModal());
     document.getElementById('vis_magnitude').addEventListener('click', () => this.visualizeMagnitude());
     document.getElementById('vis_phase').addEventListener('click', () => this.visualizePhase());
 
@@ -337,10 +349,9 @@ class QSMApp {
     document.getElementById('runBET')?.addEventListener('click', () => this.openBetSettingsModal());
 
     // Pipeline settings modal
-    document.getElementById('pipelineSettings')?.addEventListener('click', () => this.openPipelineSettingsModal());
     document.getElementById('closePipelineSettings')?.addEventListener('click', () => this.closePipelineSettingsModal());
     document.getElementById('resetPipelineSettings')?.addEventListener('click', () => this.resetPipelineSettings());
-    document.getElementById('savePipelineSettings')?.addEventListener('click', () => this.savePipelineSettings());
+    document.getElementById('runPipelineWithSettings')?.addEventListener('click', () => this.runPipelineWithSettings());
 
     // BET settings modal
     document.getElementById('closeBetSettings')?.addEventListener('click', () => this.closeBetSettingsModal());
@@ -457,12 +468,15 @@ class QSMApp {
       await this.processJsonFiles(files);
     }
 
-    // Show mask section when magnitude files are loaded (but don't auto-generate mask)
+    // Enable mask section when magnitude files are loaded (but don't auto-generate mask)
     if (type === 'magnitude' && files.length > 0) {
       const maskSection = document.getElementById('maskSection');
       if (maskSection) {
-        maskSection.style.display = 'block';
+        maskSection.classList.remove('section-disabled');
       }
+      // Enable mask buttons
+      document.getElementById('previewMask')?.removeAttribute('disabled');
+      document.getElementById('runBET')?.removeAttribute('disabled');
       // Load magnitude into viewer for visualization
       this.visualizeMagnitude();
     }
@@ -517,6 +531,16 @@ class QSMApp {
     this.multiEchoFiles[type].splice(index, 1);
     this.updateFileList(type, this.multiEchoFiles[type]);
     this.updateEchoInfo();
+
+    // Re-disable mask section if all magnitude files are removed
+    if (type === 'magnitude' && this.multiEchoFiles.magnitude.length === 0) {
+      const maskSection = document.getElementById('maskSection');
+      if (maskSection) {
+        maskSection.classList.add('section-disabled');
+      }
+      document.getElementById('previewMask')?.setAttribute('disabled', '');
+      document.getElementById('runBET')?.setAttribute('disabled', '');
+    }
   }
 
   async processJsonFiles(files) {
@@ -565,15 +589,19 @@ class QSMApp {
     // Sort by echo time
     echoTimes.sort((a, b) => a.echoTime - b.echoTime);
     this.multiEchoFiles.echoTimes = echoTimes;
-    
+
     console.log(`Final processed echo times:`, echoTimes);
     console.log(`Stored in multiEchoFiles:`, this.multiEchoFiles.echoTimes);
+
+    // Populate the editable inputs
+    this.populateEchoTimeInputs(echoTimes.map(et => et.echoTime));
   }
 
   updateEchoInfo() {
     const magCount = this.multiEchoFiles.magnitude.length;
     const phaseCount = this.multiEchoFiles.phase.length;
-    const echoTimeCount = this.multiEchoFiles.echoTimes.length;
+    const echoTimes = this.getEchoTimesFromInputs();
+    const echoTimeCount = echoTimes.length;
 
     const echoBadge = document.getElementById('echoBadge');
     const runButton = document.getElementById('run');
@@ -605,6 +633,9 @@ class QSMApp {
       }
     }
 
+    // Update echo times inputs (only if JSON was just loaded, not on every update)
+    // The inputs are managed separately via populateEchoTimeInputs()
+
     // Update run button
     if (runButton) {
       runButton.disabled = !canRun;
@@ -619,6 +650,49 @@ class QSMApp {
         }
       }
     }
+  }
+
+  // Echo time Tagify management
+  setupEchoTagify() {
+    const input = document.getElementById('echoTimesTagify');
+    if (!input || this.echoTagify) return;
+
+    this.echoTagify = new Tagify(input, {
+      delimiters: ',| ',
+      pattern: /^[\d.]+$/,
+      transformTag: (tagData) => {
+        const num = parseFloat(tagData.value);
+        if (!isNaN(num) && num > 0) {
+          tagData.value = num.toFixed(2);
+        }
+      },
+      validate: (tagData) => {
+        const num = parseFloat(tagData.value);
+        return !isNaN(num) && num > 0;
+      },
+      editTags: 1,
+      placeholder: 'Type values...'
+    });
+
+    this.echoTagify.on('change', () => this.updateEchoInfo());
+  }
+
+  populateEchoTimeInputs(echoTimes) {
+    if (!this.echoTagify) return;
+
+    const tags = echoTimes.map(t => ({ value: t.toFixed(2) }));
+    this.echoTagify.removeAllTags();
+    this.echoTagify.addTags(tags);
+    this.updateEchoInfo();
+  }
+
+  getEchoTimesFromInputs() {
+    if (!this.echoTagify) return [];
+
+    return this.echoTagify.value
+      .map(tag => parseFloat(tag.value))
+      .filter(n => !isNaN(n) && n > 0)
+      .sort((a, b) => a - b);
   }
 
   async visualizeMagnitude() {
@@ -1156,11 +1230,52 @@ class QSMApp {
     return buffer;
   }
 
+  // Determine which pipeline stages can be skipped based on settings changes
+  determineSkipStages() {
+    if (!this.pipelineHasRun || !this.lastRunSettings) {
+      return { skipUnwrap: false, skipBgRemoval: false };
+    }
+
+    const current = this.pipelineSettings;
+    const last = this.lastRunSettings;
+
+    // Check if unwrapping settings changed
+    const unwrapChanged =
+      current.unwrapMethod !== last.unwrapMethod ||
+      (current.unwrapMethod === 'romeo' &&
+       current.romeo.weighting !== last.romeo?.weighting);
+
+    // Check if background removal settings changed
+    const bgChanged =
+      current.backgroundRemoval !== last.backgroundRemoval ||
+      (current.backgroundRemoval === 'vsharp' && (
+        current.vsharp.maxRadius !== last.vsharp?.maxRadius ||
+        current.vsharp.minRadius !== last.vsharp?.minRadius ||
+        current.vsharp.threshold !== last.vsharp?.threshold
+      )) ||
+      (current.backgroundRemoval === 'smv' &&
+        current.smv.radius !== last.smv?.radius);
+
+    // If unwrap changed, can't skip anything
+    if (unwrapChanged) {
+      return { skipUnwrap: false, skipBgRemoval: false };
+    }
+
+    // If only dipole inversion changed, can skip both unwrap and bg removal
+    if (!bgChanged) {
+      return { skipUnwrap: true, skipBgRemoval: true };
+    }
+
+    // If bg removal changed but not unwrap, can skip unwrap only
+    return { skipUnwrap: true, skipBgRemoval: false };
+  }
+
   async runRomeoQSM() {
     // Validation
     const magCount = this.multiEchoFiles.magnitude.length;
     const phaseCount = this.multiEchoFiles.phase.length;
-    const echoTimeCount = this.multiEchoFiles.echoTimes.length;
+    const echoTimes = this.getEchoTimesFromInputs();
+    const echoTimeCount = echoTimes.length;
 
     if (magCount === 0 || phaseCount === 0) {
       this.updateOutput("Please upload both magnitude and phase files");
@@ -1173,7 +1288,7 @@ class QSMApp {
     }
 
     if (echoTimeCount === 0) {
-      this.updateOutput("No echo times found in JSON files");
+      this.updateOutput("Please enter echo times");
       return;
     }
 
@@ -1192,15 +1307,11 @@ class QSMApp {
 
       this.updateOutput("Starting ROMEO QSM Pipeline...");
 
-      // Prepare data for worker
-      const sortedEchoTimes = this.multiEchoFiles.echoTimes.slice().sort((a, b) => a.echoTime - b.echoTime);
-      const echoTimes = sortedEchoTimes.map(et => et.echoTime);
-
       // Read file buffers
       const magnitudeBuffers = [];
       const phaseBuffers = [];
 
-      for (let i = 0; i < sortedEchoTimes.length; i++) {
+      for (let i = 0; i < magCount; i++) {
         const magFile = this.multiEchoFiles.magnitude[i]?.file;
         const phaseFile = this.multiEchoFiles.phase[i]?.file;
 
@@ -1218,6 +1329,15 @@ class QSMApp {
         this.updateOutput("Using custom edited mask");
       }
 
+      // Determine which stages can be skipped based on settings changes
+      const skipStages = this.determineSkipStages();
+      if (skipStages.skipUnwrap) {
+        this.updateOutput("Reusing cached unwrapped phase data");
+      }
+      if (skipStages.skipBgRemoval) {
+        this.updateOutput("Reusing cached background-removed data");
+      }
+
       // Send to worker with pipeline settings
       this.worker.postMessage({
         type: 'run',
@@ -1229,7 +1349,8 @@ class QSMApp {
           unwrapMode,
           maskThreshold: this.maskThreshold,
           customMaskBuffer,
-          pipelineSettings: this.pipelineSettings
+          pipelineSettings: this.pipelineSettings,
+          skipStages
         }
       });
 
@@ -1451,9 +1572,10 @@ class QSMApp {
   openPipelineSettingsModal() {
     // Populate form with current settings
 
-    // Unwrap method
+    // Unwrap method and mode
     const unwrapMethod = this.pipelineSettings.unwrapMethod || 'romeo';
     document.getElementById('unwrapMethod').value = unwrapMethod;
+    document.getElementById('unwrapMode').value = this.pipelineSettings.unwrapMode || 'individual';
     document.getElementById('romeoSettings').style.display = unwrapMethod === 'romeo' ? 'block' : 'none';
     document.getElementById('laplacianSettings').style.display = unwrapMethod === 'laplacian' ? 'block' : 'none';
     document.getElementById('romeoWeighting').value = this.pipelineSettings.romeo.weighting;
@@ -1508,8 +1630,9 @@ class QSMApp {
   resetPipelineSettings() {
     // Reset to defaults
 
-    // Unwrap method
+    // Unwrap method and mode
     document.getElementById('unwrapMethod').value = 'romeo';
+    document.getElementById('unwrapMode').value = 'individual';
     document.getElementById('romeoSettings').style.display = 'block';
     document.getElementById('laplacianSettings').style.display = 'none';
     document.getElementById('romeoWeighting').value = 'phase_snr';
@@ -1539,7 +1662,7 @@ class QSMApp {
 
     // TV-ADMM
     document.getElementById('tvLambda').value = 0.001;
-    document.getElementById('tvMaxIter').value = 50;
+    document.getElementById('tvMaxIter').value = 250;
     document.getElementById('tvTol').value = 0.001;
 
     // RTS
@@ -1549,10 +1672,11 @@ class QSMApp {
     document.getElementById('rtsMaxIter').value = 20;
   }
 
-  savePipelineSettings() {
+  runPipelineWithSettings() {
     // Save settings from form
     this.pipelineSettings = {
       unwrapMethod: document.getElementById('unwrapMethod').value,
+      unwrapMode: document.getElementById('unwrapMode').value,
       romeo: {
         weighting: document.getElementById('romeoWeighting').value
       },
@@ -1587,7 +1711,7 @@ class QSMApp {
     };
 
     this.closePipelineSettingsModal();
-    this.updateOutput("Pipeline settings saved");
+    this.runRomeoQSM();
   }
 
   // BET Settings Modal

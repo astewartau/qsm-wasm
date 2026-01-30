@@ -404,68 +404,51 @@ def unwrap_individual_romeo(wrapped, TEs, mag=None, mask=None):
     return unwrapped
 
 
-def unwrap_temporal_romeo(wrapped, TEs, mag=None, mask=None, template=1):
+def temporal_unwrap(unwrapped_template, wrapped, TEs, template_idx, mask):
     """
-    Temporal unwrapping (exact Julia ROMEO.jl match)
+    Temporal phase unwrapping using TE scaling.
 
-    Spatially unwrap template echo, then temporally unwrap others
+    This is algorithm-agnostic - works with any spatial unwrapping method
+    (ROMEO, Laplacian, etc). Given one spatially-unwrapped echo, unwraps
+    all other echoes using the linear relationship between phase and TE.
+
+    Parameters:
+    -----------
+    unwrapped_template : ndarray, shape (nx, ny, nz)
+        Spatially unwrapped phase of the template echo
+    wrapped : ndarray, shape (nx, ny, nz, necho)
+        Wrapped phase data for all echoes
+    TEs : array-like
+        Echo times in milliseconds
+    template_idx : int
+        Index of the template echo (0-indexed)
+    mask : ndarray, shape (nx, ny, nz)
+        Processing mask
+
+    Returns:
+    --------
+    unwrapped : ndarray, shape (nx, ny, nz, necho)
+        Unwrapped phase for all echoes
     """
     necho = wrapped.shape[3]
-    
-    # Convert template to 0-indexed
-    template_idx = template - 1
-    
-    # Calculate p2ref exactly like ROMEO.jl
-    if template == 1:
-        p2ref_idx = 1
-    else:
-        p2ref_idx = template_idx - 1
-    
-    # Ensure p2ref is valid
-    p2ref_idx = min(p2ref_idx, necho - 1)
-    
-    print(f"ROMEO temporal: template echo {template} (idx {template_idx}), p2ref echo {p2ref_idx + 1} (idx {p2ref_idx})")
-    
-    # Use Julia-compatible mask if none provided
-    if mask is None:
-        mask = julia_compatible_mask(mag[:, :, :, template_idx] if mag is not None else wrapped[:, :, :, template_idx])
-        print(f"Using Julia-compatible mask: {np.sum(mask)}/{mask.size} voxels ({np.sum(mask)/mask.size*100:.1f}%)")
-    
-    # Prepare args exactly like ROMEO.jl
-    phase2 = wrapped[:, :, :, p2ref_idx]
-    TEs_pair = [TEs[template_idx], TEs[p2ref_idx]]
-    mag_template = mag[:, :, :, template_idx] if mag is not None else None
-    
-    # Calculate weights for template echo
-    weights = calculate_weights_romeo(
-        wrapped[:, :, :, template_idx], mag_template, phase2, TEs_pair, mask, 'romeo'
-    )
-    
-    # Spatial unwrapping of template echo
-    print(f"  Spatially unwrapping template echo {template}...")
     unwrapped = wrapped.copy()
-    unwrapped[:, :, :, template_idx] = grow_region_unwrap(
-        wrapped[:, :, :, template_idx], weights, mask
-    )
-    
-    # Temporal unwrapping - exact ROMEO.jl order and logic
-    print(f"  Temporal unwrapping other echoes...")
-    
-    # Build echo order exactly like ROMEO.jl
+
+    # Set the template echo
+    unwrapped[:, :, :, template_idx] = unwrapped_template
+
+    print(f"  Temporal unwrapping from template echo {template_idx + 1}...")
+
+    # Build echo order: before template (reverse), after template (forward)
     echo_order = []
-    
-    # Echoes before template (in reverse order)
     for ieco in range(template_idx - 1, -1, -1):
         echo_order.append(ieco)
-    
-    # Echoes after template (in forward order)  
     for ieco in range(template_idx + 1, necho):
         echo_order.append(ieco)
-    
+
     print(f"  Echo processing order: {[i+1 for i in echo_order]} (1-indexed)")
-    
+
     for ieco in echo_order:
-        # Calculate reference echo exactly like ROMEO.jl
+        # Reference is adjacent echo (already unwrapped)
         if ieco < template_idx:
             iref = ieco + 1
         else:
@@ -473,19 +456,65 @@ def unwrap_temporal_romeo(wrapped, TEs, mag=None, mask=None, template=1):
 
         print(f"    Processing echo {ieco + 1}, reference: echo {iref + 1}")
 
-        # Scale reference value exactly like ROMEO.jl
+        # Scale reference by TE ratio
         refvalue = unwrapped[:, :, :, iref] * (TEs[ieco] / TEs[iref])
 
-        # Temporal unwrapping (VECTORIZED): unwrap_voxel for all voxels at once
-        # unwrap_voxel(new_val, old_val) = new_val - 2π * round((new_val - old_val) / 2π)
+        # Simple 2π unwrapping
         diff = wrapped[:, :, :, ieco] - refvalue
         n_wraps = np.round(diff / (2 * np.pi))
         unwrapped_echo = wrapped[:, :, :, ieco] - 2 * np.pi * n_wraps
 
         # Apply only within mask
         unwrapped[:, :, :, ieco] = np.where(mask, unwrapped_echo, unwrapped[:, :, :, ieco])
-    
+
     return unwrapped
+
+
+def unwrap_temporal_romeo(wrapped, TEs, mag=None, mask=None, template=1):
+    """
+    Temporal unwrapping using ROMEO for spatial unwrapping.
+
+    Spatially unwraps template echo with ROMEO, then temporally unwraps others.
+    """
+    necho = wrapped.shape[3]
+
+    # Convert template to 0-indexed
+    template_idx = template - 1
+
+    # Calculate p2ref exactly like ROMEO.jl
+    if template == 1:
+        p2ref_idx = 1
+    else:
+        p2ref_idx = template_idx - 1
+
+    # Ensure p2ref is valid
+    p2ref_idx = min(p2ref_idx, necho - 1)
+
+    print(f"ROMEO temporal: template echo {template} (idx {template_idx}), p2ref echo {p2ref_idx + 1} (idx {p2ref_idx})")
+
+    # Use Julia-compatible mask if none provided
+    if mask is None:
+        mask = julia_compatible_mask(mag[:, :, :, template_idx] if mag is not None else wrapped[:, :, :, template_idx])
+        print(f"Using Julia-compatible mask: {np.sum(mask)}/{mask.size} voxels ({np.sum(mask)/mask.size*100:.1f}%)")
+
+    # Prepare args exactly like ROMEO.jl
+    phase2 = wrapped[:, :, :, p2ref_idx]
+    TEs_pair = [TEs[template_idx], TEs[p2ref_idx]]
+    mag_template = mag[:, :, :, template_idx] if mag is not None else None
+
+    # Calculate weights for template echo
+    weights = calculate_weights_romeo(
+        wrapped[:, :, :, template_idx], mag_template, phase2, TEs_pair, mask, 'romeo'
+    )
+
+    # Spatial unwrapping of template echo using ROMEO
+    print(f"  Spatially unwrapping template echo {template} with ROMEO...")
+    unwrapped_template = grow_region_unwrap(
+        wrapped[:, :, :, template_idx], weights, mask
+    )
+
+    # Temporal unwrapping of other echoes
+    return temporal_unwrap(unwrapped_template, wrapped, TEs, template_idx, mask)
 
 
 def calculateB0_unwrapped(unwrapped_phase, mag, TEs, weighting_type='phase_snr'):

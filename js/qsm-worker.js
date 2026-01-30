@@ -59,9 +59,13 @@ async function loadRomeoCode(romeoCode) {
 }
 
 async function runPipeline(data) {
-  const { magnitudeBuffers, phaseBuffers, echoTimes, magField, unwrapMode, maskThreshold, customMaskBuffer, pipelineSettings } = data;
+  const { magnitudeBuffers, phaseBuffers, echoTimes, magField, unwrapMode, maskThreshold, customMaskBuffer, pipelineSettings, skipStages } = data;
   const thresholdFraction = (maskThreshold || 15) / 100;  // Default to 15% if not provided
   const hasCustomMask = customMaskBuffer !== null && customMaskBuffer !== undefined;
+
+  // Intelligent caching - determine which stages to skip
+  const canSkipUnwrap = skipStages?.skipUnwrap || false;
+  const canSkipBgRemoval = skipStages?.skipBgRemoval || false;
 
   // Extract pipeline settings with defaults
   const unwrapMethod = pipelineSettings?.unwrapMethod || 'romeo';
@@ -150,14 +154,30 @@ header_info = mag_img.header
 affine_matrix = mag_img.affine
 `);
 
-    postProgress(0.1, 'Unwrapping phase...');
+    // Check if we can skip unwrapping (cached data exists)
+    let actuallySkipUnwrap = false;
+    if (canSkipUnwrap) {
+      const hasCachedUnwrap = await pyodide.runPython(`
+'B0_fieldmap' in dir() and B0_fieldmap is not None and 'processing_mask' in dir() and processing_mask is not None
+`);
+      actuallySkipUnwrap = hasCachedUnwrap;
+      if (actuallySkipUnwrap) {
+        postLog("Using cached unwrapped phase data");
+        postProgress(0.76, 'Skipped unwrapping (cached)');
+      } else {
+        postLog("Cannot skip unwrapping - cached data not available");
+      }
+    }
 
-    // Choose unwrapping method
-    const useRomeo = unwrapMethod === 'romeo';
-    pyodide.globals.set('use_romeo_unwrap', useRomeo);
+    if (!actuallySkipUnwrap) {
+      postProgress(0.1, 'Unwrapping phase...');
 
-    if (useRomeo) {
-      postLog("Running ROMEO phase unwrapping...");
+      // Choose unwrapping method
+      const useRomeo = unwrapMethod === 'romeo';
+      pyodide.globals.set('use_romeo_unwrap', useRomeo);
+
+      if (useRomeo) {
+        postLog("Running ROMEO phase unwrapping...");
 
       // Create progress callback for Python to call
       // ROMEO takes ~75% of total time, maps to 1-76% of progress bar
@@ -325,13 +345,31 @@ except:
 
 print(f"Voxel size: {voxel_size}")
 
-# Unwrap each echo
+# Unwrap phase data
 n_echoes = phase_4d.shape[3]
 unwrapped_4d = np.zeros_like(phase_4d)
+use_temporal = not ${individual}
 
-for i in range(n_echoes):
-    print(f"  Unwrapping echo {i+1}/{n_echoes}...")
-    unwrapped_4d[:,:,:,i] = laplacian_unwrap(phase_4d[:,:,:,i], voxel_size)
+if use_temporal and n_echoes > 1:
+    # Temporal mode: spatially unwrap first echo, temporally unwrap rest
+    print(f"Using temporal unwrapping mode ({n_echoes} echoes)")
+    template_idx = 0
+    print(f"  Spatially unwrapping template echo {template_idx + 1} with Laplacian...")
+    unwrapped_template = laplacian_unwrap(phase_4d[:,:,:,template_idx], voxel_size)
+
+    # Create mask for temporal unwrapping
+    magnitude_combined = magnitude_4d[:, :, :, 0]
+    mag_threshold = np.max(magnitude_combined) * ${thresholdFraction}
+    temp_mask = magnitude_combined > mag_threshold
+
+    # Use temporal_unwrap from romeo_python.py
+    unwrapped_4d = temporal_unwrap(unwrapped_template, phase_4d, echo_times_py, template_idx, temp_mask)
+else:
+    # Individual mode: unwrap each echo separately
+    print(f"Using individual unwrapping mode ({n_echoes} echoes)")
+    for i in range(n_echoes):
+        print(f"  Unwrapping echo {i+1}/{n_echoes}...")
+        unwrapped_4d[:,:,:,i] = laplacian_unwrap(phase_4d[:,:,:,i], voxel_size)
 
 print("Laplacian unwrapping completed!")
 
@@ -349,9 +387,26 @@ print(f"B0 range: [{np.min(B0_fieldmap[processing_mask]):.1f}, {np.max(B0_fieldm
 print(f"Using first echo magnitude: {magnitude_combined.shape}")
 `);
     }
+    } // End of if (!actuallySkipUnwrap)
 
-    postProgress(0.76, 'Removing background...');
-    postLog(`Removing background field using ${backgroundMethod.toUpperCase()}...`);
+    // Check if we can skip background removal (cached data exists)
+    let actuallySkipBgRemoval = false;
+    if (canSkipBgRemoval) {
+      const hasCachedBgRemoval = await pyodide.runPython(`
+'local_fieldmap' in dir() and local_fieldmap is not None
+`);
+      actuallySkipBgRemoval = hasCachedBgRemoval;
+      if (actuallySkipBgRemoval) {
+        postLog("Using cached background-removed data");
+        postProgress(0.8, 'Skipped background removal (cached)');
+      } else {
+        postLog("Cannot skip background removal - cached data not available");
+      }
+    }
+
+    if (!actuallySkipBgRemoval) {
+      postProgress(0.76, 'Removing background...');
+      postLog(`Removing background field using ${backgroundMethod.toUpperCase()}...`);
 
     // Create progress callback for background removal
     const bgProgressCallback = (current, total) => {
@@ -528,6 +583,7 @@ print(f"Eroded mask coverage: {np.sum(processing_mask)}/{processing_mask.size} v
 print(f"Local field range: [{np.min(local_fieldmap[processing_mask]):.1f}, {np.max(local_fieldmap[processing_mask]):.1f}] Hz")
 print("Background removal completed!")
 `);
+    } // End of if (!actuallySkipBgRemoval)
 
     postProgress(0.8, 'Dipole inversion...');
     postLog(`Running ${dipoleMethod.toUpperCase()} dipole inversion...`);
@@ -609,12 +665,19 @@ def divergence_periodic(gx, gy, gz, voxel_size):
     return -(div_x + div_y + div_z)
 
 def _shrink_update(u, d, threshold):
-    """Combined shrink and dual update for TV-ADMM"""
-    u = u + d  # u := u + grad_x
-    z = np.sign(u) * np.maximum(np.abs(u) - threshold, 0)  # shrink
-    u = u - z  # dual update
-    d = 2*z - u  # precompute d = z - u + z
-    return u, d
+    """Combined shrink and dual update for TV-ADMM
+
+    From QSM.jl tv.jl lines 328-334:
+    v = u + grad_x           # intermediate
+    z = shrink(v, λ/ρ)       # z-subproblem
+    new_u = v - z            # dual update
+    new_d = 2*z - v          # precompute z - new_u for next x-subproblem
+    """
+    v = u + d  # intermediate: v = old_u + grad_x
+    z = np.sign(v) * np.maximum(np.abs(v) - threshold, 0)  # shrink
+    new_u = v - z  # dual update
+    new_d = 2*z - v  # precompute for next iteration (equals z - new_u)
+    return new_u, new_d
 
 # --- TKD (Truncated K-space Division) from QSM.jl direct.jl ---
 def tkd_qsm(local_field, mask, voxel_size, bdir=(0, 0, 1), thr=0.15):
@@ -662,7 +725,8 @@ def tikh_qsm(local_field, mask, voxel_size, bdir=(0, 0, 1),
 
     if reg == 'identity':
         # iD = D / (D^2 + lambda)
-        iD = D / (D_sq + lambda_)
+        denom = D_sq + lambda_
+        iD = np.where(np.abs(denom) > 1e-12, D / denom, 0.0)
     elif reg == 'gradient':
         # iD = D / (D^2 + lambda*L) where L = negative Laplacian
         L = create_laplacian_kernel(shape, voxel_size)
@@ -706,16 +770,22 @@ def tv_admm_qsm(local_field, mask, voxel_size, bdir=(0, 0, 1),
     L = create_laplacian_kernel(shape, voxel_size)
 
     # Precompute frequency-domain operators (from QSM.jl tv.jl lines 220-235)
+    # iA = (D'D + rho*L)^-1
+    # F_hat = iA * D' * FFT(f)
+    # When denominator is near zero, set both iA and F_hat to zero (QSM.jl tv.jl lines 224-234)
     D_conj = np.conj(D)
     D_sq = D_conj * D
     denom = D_sq + rho * L
-    denom[denom == 0] = 1e-12
-    iA = 1.0 / denom
 
-    # Precompute RHS contribution: F_hat = iA * D' * FFT(f)
     f = local_field * mask
     F = np.fft.fftn(f)
-    F_hat = iA * D_conj * F
+
+    # Handle near-zero denominators properly (like QSM.jl)
+    eps = 1e-10
+    small_denom = np.abs(denom) < eps
+    denom_safe = np.where(small_denom, 1.0, denom)  # Avoid division by zero
+    iA = np.where(small_denom, 0.0, 1.0 / denom_safe)
+    F_hat = np.where(small_denom, 0.0, iA * D_conj * F)
 
     # Initialize ADMM variables
     x = np.zeros(shape, dtype=np.float64)
@@ -777,10 +847,13 @@ def rts_qsm(local_field, mask, voxel_size, bdir=(0, 0, 1),
 
     print("Step 2: ADMM with TV...")
     denominator = M + rho * L
-    denominator[denominator == 0] = 1e-12
-    iA = rho / denominator
+    # Handle near-zero denominators properly
+    eps = 1e-10
+    small_denom = np.abs(denominator) < eps
+    denom_safe = np.where(small_denom, 1.0, denominator)
+    iA = np.where(small_denom, 0.0, rho / denom_safe)
     X = np.fft.fftn(x)
-    F_const = M * X / denominator
+    F_const = np.where(small_denom, 0.0, M * X / denom_safe)
     px, py, pz = np.zeros(shape), np.zeros(shape), np.zeros(shape)
 
     def gradient(x):

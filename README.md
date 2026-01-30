@@ -1,4 +1,4 @@
-# QSM-WASM: Browser-Based Quantitative Susceptibility Mapping
+# QSMbly: Browser-Based Quantitative Susceptibility Mapping
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Ready-green.svg)](https://pages.github.com/)
@@ -46,7 +46,7 @@ A complete **Quantitative Susceptibility Mapping (QSM)** pipeline that runs enti
 ## 🚀 Quick Start
 
 ### Option 1: GitHub Pages (Recommended)
-1. Visit the live demo: `https://yourusername.github.io/qsm-wasm/`
+1. Visit the live demo: `https://yourusername.github.io/qsmbly/`
 2. Upload your magnitude and phase NIfTI files
 3. Set acquisition parameters (Echo Time, Field Strength)
 4. Run the pipeline!
@@ -54,8 +54,8 @@ A complete **Quantitative Susceptibility Mapping (QSM)** pipeline that runs enti
 ### Option 2: Local Development
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/qsm-wasm.git
-cd qsm-wasm
+git clone https://github.com/yourusername/qsmbly.git
+cd qsmbly
 
 # Serve locally (Python)
 python -m http.server 8080
@@ -69,7 +69,7 @@ npx serve .
 ## 📁 Repository Structure
 
 ```
-qsm-wasm/
+qsmbly/
 ├── index.html              # Main application interface
 ├── js/
 │   └── qsm-app.js          # Main application logic
@@ -188,8 +188,8 @@ We welcome contributions! Areas for improvement:
 ### Development Setup
 ```bash
 # Clone and setup
-git clone https://github.com/yourusername/qsm-wasm.git
-cd qsm-wasm
+git clone https://github.com/yourusername/qsmbly.git
+cd qsmbly
 
 # For Python algorithm development
 pip install nibabel numpy scipy
@@ -218,9 +218,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🐛 Issues & Support
 
-- **Bug Reports**: [GitHub Issues](https://github.com/yourusername/qsm-wasm/issues)
-- **Feature Requests**: [GitHub Discussions](https://github.com/yourusername/qsm-wasm/discussions)
-- **Documentation**: [Wiki](https://github.com/yourusername/qsm-wasm/wiki)
+- **Bug Reports**: [GitHub Issues](https://github.com/yourusername/qsmbly/issues)
+- **Feature Requests**: [GitHub Discussions](https://github.com/yourusername/qsmbly/discussions)
+- **Documentation**: [Wiki](https://github.com/yourusername/qsmbly/wiki)
 
 ---
 

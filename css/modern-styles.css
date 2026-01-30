@@ -377,7 +377,98 @@ body {
   display: none;
 }
 
+.unit-inline {
+  font-weight: 400;
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+}
+
+/* Tagify dark theme overrides - use high specificity */
+#echoTimesTagify {
+  display: none;
+}
+
+.param-group .tagify,
+.tagify {
+  --tags-border-color: #2d3f5a !important;
+  --tags-focus-border-color: #3b82f6 !important;
+  --tagify-dd-bg-color: #232f42 !important;
+  background: #232f42 !important;
+  border: 1px solid #2d3f5a !important;
+  border-radius: 6px !important;
+  min-height: 26px !important;
+  padding: 2px 4px !important;
+  width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+}
+
+.param-group .tagify:focus-within,
+.tagify:focus-within {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15) !important;
+}
+
+.param-group .tagify__tag,
+.tagify .tagify__tag {
+  margin: 2px !important;
+  border-radius: 3px !important;
+  background: #1e3a5f !important;
+  box-shadow: none !important;
+}
+
+.param-group .tagify__tag > div,
+.tagify .tagify__tag > div {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace !important;
+  font-size: 0.65rem !important;
+  padding: 0.15em 0.4em !important;
+  color: #e2e8f0 !important;
+}
+
+.param-group .tagify__tag > div::before,
+.tagify .tagify__tag > div::before {
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+.param-group .tagify__tag:hover > div::before,
+.tagify .tagify__tag:hover > div::before {
+  background: rgba(255,255,255,0.05) !important;
+}
+
+.param-group .tagify__tag__removeBtn,
+.tagify .tagify__tag__removeBtn {
+  width: 12px !important;
+  height: 12px !important;
+  margin-left: 2px !important;
+  color: rgba(255,255,255,0.5) !important;
+  background: none !important;
+}
+
+.param-group .tagify__tag__removeBtn:hover,
+.tagify .tagify__tag__removeBtn:hover {
+  background: rgba(255,255,255,0.15) !important;
+  color: #fff !important;
+}
+
+.param-group .tagify__input,
+.tagify .tagify__input {
+  font-size: 0.7rem !important;
+  margin: 2px !important;
+  padding: 2px 4px !important;
+  color: #e2e8f0 !important;
+}
+
+.param-group .tagify__input::before,
+.tagify .tagify__input::before {
+  font-size: 0.65rem !important;
+  color: #8b99ad !important;
+}
+
 input[type="number"],
+input[type="text"],
 select {
   width: 100%;
   padding: var(--space-xs) var(--space-sm);
@@ -390,6 +481,7 @@ select {
 }
 
 input[type="number"]:focus,
+input[type="text"]:focus,
 select:focus {
   outline: none;
   border-color: var(--color-primary);
@@ -434,6 +526,18 @@ select {
 
 .btn-primary:disabled {
   opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Disabled section state */
+.section-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.section-disabled .btn,
+.section-disabled input,
+.section-disabled select {
   cursor: not-allowed;
 }
 
