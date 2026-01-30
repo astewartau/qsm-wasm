@@ -174,6 +174,7 @@ affine_matrix = mag_img.affine
 
       // Choose unwrapping method
       const useRomeo = unwrapMethod === 'romeo';
+      const individual = unwrapMode === 'individual';
       pyodide.globals.set('use_romeo_unwrap', useRomeo);
 
       if (useRomeo) {
@@ -187,7 +188,6 @@ affine_matrix = mag_img.affine
       };
       pyodide.globals.set('js_progress_callback', unwrapProgressCallback);
 
-      const individual = unwrapMode === 'individual';
       const romeoWeighting = romeoSettings.weighting;
       pyodide.globals.set('romeo_weighting', romeoWeighting);
       await pyodide.runPython(`
@@ -348,7 +348,7 @@ print(f"Voxel size: {voxel_size}")
 # Unwrap phase data
 n_echoes = phase_4d.shape[3]
 unwrapped_4d = np.zeros_like(phase_4d)
-use_temporal = not ${individual}
+use_temporal = not ${individual ? 'True' : 'False'}
 
 if use_temporal and n_echoes > 1:
     # Temporal mode: spatially unwrap first echo, temporally unwrap rest
