@@ -71,6 +71,11 @@ import {
   HARPERELLA_DEFAULTS as _HARPERELLA,
   TIKHONOV_DEFAULTS as _TIKHONOV,
   NLTV_DEFAULTS as _NLTV,
+  NDI_DEFAULTS as _NDI,
+  FANSI_DEFAULTS as _FANSI,
+  L1QSM_DEFAULTS as _L1QSM,
+  WHQSM_DEFAULTS as _WHQSM,
+  HDQSM_DEFAULTS as _HDQSM,
   MEDI_DEFAULTS as _MEDI,
   QSMART_DEFAULTS as _QSMART,
   ROMEO_DEFAULTS as _ROMEO,
@@ -253,6 +258,51 @@ export const NLTV_DEFAULTS = {
   newton_max_iter: _NLTV.newton_iter,
 };
 
+export const NDI_DEFAULTS = {
+  tau: _NDI.tau,
+  alpha: _NDI.alpha,
+  max_iter: _NDI.max_iter,
+};
+
+export const FANSI_DEFAULTS = {
+  alpha1: _FANSI.alpha1,
+  mu1: _FANSI.mu1,
+  mu2: _FANSI.mu2,
+  alpha0: _FANSI.alpha0,
+  mu0: _FANSI.mu0,
+  max_iter: _FANSI.max_iter,
+  tol_update: _FANSI.tol_update,
+};
+
+export const L1QSM_DEFAULTS = {
+  alpha1: _L1QSM.alpha1,
+  mu1: _L1QSM.mu1,
+  mu2: _L1QSM.mu2,
+  mu3: _L1QSM.mu3,
+  lambda: _L1QSM.lambda,
+  max_iter: _L1QSM.max_iter,
+  tol_update: _L1QSM.tol_update,
+};
+
+export const WHQSM_DEFAULTS = {
+  alpha1: _WHQSM.alpha1,
+  mu1: _WHQSM.mu1,
+  mu2: _WHQSM.mu2,
+  beta: _WHQSM.beta,
+  muh: _WHQSM.muh,
+  max_iter: _WHQSM.max_iter,
+  tol_update: _WHQSM.tol_update,
+};
+
+export const HDQSM_DEFAULTS = {
+  alpha_l2: _HDQSM.alpha_l2,
+  mu1_l2: _HDQSM.mu1_l2,
+  mu2: _HDQSM.mu2,
+  max_iter_l1: _HDQSM.max_iter_l1,
+  max_iter_l2: _HDQSM.max_iter_l2,
+  tol_update: _HDQSM.tol_update,
+};
+
 export const MEDI_DEFAULTS = {
   lambda: _MEDI.lambda,
   percentage: _MEDI.percentage,
@@ -322,7 +372,7 @@ export const PIPELINE_METHODS = {
   fieldCalculation: ['weighted_avg', 'linear_fit'],
   b0_weight_type: ['phase_snr', 'phase_var', 'average', 'tes', 'mag'],
   bf_algorithm: ['vsharp', 'sharp', 'resharp', 'ismv', 'pdf', 'lbv', 'harperella', 'iharperella'],
-  dipole_inversion: ['tkd', 'tsvd', 'tikhonov', 'tv', 'rts', 'nltv', 'medi'],
+  dipole_inversion: ['tkd', 'tsvd', 'tikhonov', 'tv', 'rts', 'nltv', 'medi', 'ndi', 'fansi', 'fansitgv', 'l1qsm', 'whqsm', 'hdqsm'],
   // Inner dipole inversion for QSMART's two stages (includes ilsqr, excludes tgv/qsmart)
   qsmart_inversion: ['tkd', 'tsvd', 'tikhonov', 'tv', 'rts', 'nltv', 'medi', 'ilsqr']
 };
@@ -356,6 +406,12 @@ export const PIPELINE_DEFAULTS = {
   tv: { ...TV_DEFAULTS },
   rts: { ...RTS_DEFAULTS },
   nltv: { ...NLTV_DEFAULTS },
+  ndi: { ...NDI_DEFAULTS },
+  fansi: { ...FANSI_DEFAULTS },
+  fansitgv: { ...FANSI_DEFAULTS },
+  l1qsm: { ...L1QSM_DEFAULTS },
+  whqsm: { ...WHQSM_DEFAULTS },
+  hdqsm: { ...HDQSM_DEFAULTS },
   medi: { ...MEDI_DEFAULTS }
 };
 
@@ -439,6 +495,11 @@ const QSMConfig = {
   TV_DEFAULTS,
   RTS_DEFAULTS,
   NLTV_DEFAULTS,
+  NDI_DEFAULTS,
+  FANSI_DEFAULTS,
+  L1QSM_DEFAULTS,
+  WHQSM_DEFAULTS,
+  HDQSM_DEFAULTS,
   MEDI_DEFAULTS,
   EXAMPLE_DATA,
   STAGE_DISPLAY_NAMES,

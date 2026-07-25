@@ -27,8 +27,8 @@ export const TKD_DEFAULTS = {
 export const TGV_DEFAULTS = {
   "iterations": 1000,
   "erosions": 3,
-  "alpha0": 0.001,
-  "alpha1": 0.001,
+  "alpha0": 0.0015,
+  "alpha1": 0.0005,
   "step_size": 3,
   "tol": 0.00001
 };
@@ -42,9 +42,9 @@ export const BET_DEFAULTS = {
 };
 
 export const VSHARP_DEFAULTS = {
-  "threshold": 0.001,
-  "max_radius_factor": 18,
-  "min_radius_factor": 2
+  "threshold": 0.05,
+  "max_radius": 12,
+  "min_radius": 1
 };
 
 export const PDF_DEFAULTS = {
@@ -56,9 +56,9 @@ export const LBV_DEFAULTS = {
 };
 
 export const ISMV_DEFAULTS = {
-  "tol": 0.001,
-  "max_iter": 500,
-  "radius_factor": 2
+  "tol": 0.000001,
+  "max_iter": 50,
+  "radius": 5
 };
 
 export const SWI_DEFAULTS = {
@@ -74,7 +74,7 @@ export const SWI_DEFAULTS = {
 
 export const SHARP_DEFAULTS = {
   "threshold": 0.05,
-  "radius_factor": 18
+  "radius": 6
 };
 
 export const RESHARP_DEFAULTS = {
@@ -101,6 +101,58 @@ export const NLTV_DEFAULTS = {
   "tol": 0.001,
   "max_iter": 250,
   "newton_iter": 10
+};
+
+export const NDI_DEFAULTS = {
+  "tau": 2,
+  "alpha": 0.00001,
+  "max_iter": 200,
+  "phase_scale": 1
+};
+
+export const FANSI_DEFAULTS = {
+  "alpha1": 0.0002,
+  "mu1": 0.02,
+  "mu2": 1,
+  "alpha0": 0.0004,
+  "mu0": 0.04,
+  "max_iter": 150,
+  "tol_update": 0.1,
+  "tol_delta": 0.000001,
+  "phase_scale": 1
+};
+
+export const L1QSM_DEFAULTS = {
+  "alpha1": 0.0002,
+  "mu1": 0.02,
+  "mu2": 1,
+  "mu3": 1,
+  "lambda": 1,
+  "max_iter": 50,
+  "tol_update": 1,
+  "tol_delta": 0.000001,
+  "phase_scale": 1
+};
+
+export const WHQSM_DEFAULTS = {
+  "alpha1": 0.0002,
+  "mu1": 0.02,
+  "mu2": 1,
+  "beta": 150,
+  "muh": 3,
+  "max_iter": 300,
+  "tol_update": 0.1,
+  "tol_delta": 0.000001,
+  "phase_scale": 1
+};
+
+export const HDQSM_DEFAULTS = {
+  "alpha_l2": 0.0001,
+  "mu1_l2": 0.01,
+  "mu2": 1,
+  "max_iter_l1": 20,
+  "max_iter_l2": 80,
+  "tol_update": 1
 };
 
 export const MEDI_DEFAULTS = {
