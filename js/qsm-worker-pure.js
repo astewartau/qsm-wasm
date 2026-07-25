@@ -1405,7 +1405,7 @@ async function runTotalFieldPipeline(data) {
 
   // Validate methods
   const validBgMethods = ['vsharp', 'sharp', 'resharp', 'ismv', 'pdf', 'lbv', 'harperella', 'iharperella'];
-  const validInversionMethods = ['tkd', 'tsvd', 'tikhonov', 'tv', 'rts', 'nltv', 'medi', 'ilsqr'];
+  const validInversionMethods = ['tkd', 'tsvd', 'tikhonov', 'tv', 'rts', 'nltv', 'medi', 'ndi', 'fansi', 'fansitgv', 'l1qsm', 'whqsm', 'hdqsm', 'ilsqr'];
   if (!validBgMethods.includes(backgroundMethod)) {
     throw new Error(`Unknown background removal method: '${backgroundMethod}'`);
   }
@@ -1632,7 +1632,7 @@ async function runLocalFieldPipeline(data) {
   const hasPreparedMagnitude = preparedMagnitude !== null && preparedMagnitude !== undefined;
 
   const dipoleMethod = pipelineSettings?.dipole_inversion || 'rts';
-  const validInversionMethods = ['tkd', 'tsvd', 'tikhonov', 'tv', 'rts', 'nltv', 'medi', 'ilsqr'];
+  const validInversionMethods = ['tkd', 'tsvd', 'tikhonov', 'tv', 'rts', 'nltv', 'medi', 'ndi', 'fansi', 'fansitgv', 'l1qsm', 'whqsm', 'hdqsm', 'ilsqr'];
   if (!validInversionMethods.includes(dipoleMethod)) {
     throw new Error(`Unknown dipole inversion method: '${dipoleMethod}'`);
   }
@@ -2233,6 +2233,22 @@ async function runDipoleInversionByMethod(
     smv: false, smv_radius: 5, merit: false, data_weighting: 1
   };
   const ilsqrSettings = pipelineSettings?.ilsqr || { tol: 0.01, max_iter: 50 };
+  const ndiSettings = pipelineSettings?.ndi || { tau: 2, alpha: 1e-5, max_iter: 200 };
+  const fansiSettings = pipelineSettings?.fansi || {
+    alpha1: 0.0002, mu1: 0.02, mu2: 1, alpha0: 0.0004, mu0: 0.04, max_iter: 150, tol_update: 0.1
+  };
+  const fansitgvSettings = pipelineSettings?.fansitgv || pipelineSettings?.fansi || {
+    alpha1: 0.0002, mu1: 0.02, mu2: 1, alpha0: 0.0004, mu0: 0.04, max_iter: 150, tol_update: 0.1
+  };
+  const l1qsmSettings = pipelineSettings?.l1qsm || {
+    alpha1: 0.0002, mu1: 0.02, mu2: 1, mu3: 1, lambda: 1, max_iter: 50, tol_update: 1
+  };
+  const whqsmSettings = pipelineSettings?.whqsm || {
+    alpha1: 0.0002, mu1: 0.02, mu2: 1, beta: 150, muh: 3, max_iter: 300, tol_update: 0.1
+  };
+  const hdqsmSettings = pipelineSettings?.hdqsm || {
+    alpha_l2: 0.0001, mu1_l2: 0.01, mu2: 1, max_iter_l1: 20, max_iter_l2: 80, tol_update: 1
+  };
 
   let qsmResult;
 
@@ -2324,6 +2340,57 @@ async function runDipoleInversionByMethod(
         qsmResult[i] *= radToHz;
       }
     }
+  } else if (dipoleMethod === 'ndi') {
+    qsmResult = new Float64Array(wasmModule.ndi_wasm_with_progress(
+      localField, erodedMask, nx, ny, nz, vsx, vsy, vsz,
+      0, 0, 1,
+      ndiSettings.tau, ndiSettings.alpha, ndiSettings.max_iter,
+      magField || 3.0, progress
+    ));
+  } else if (dipoleMethod === 'fansi') {
+    qsmResult = new Float64Array(wasmModule.fansi_wasm_with_progress(
+      localField, erodedMask, nx, ny, nz, vsx, vsy, vsz,
+      0, 0, 1,
+      fansiSettings.alpha1, fansiSettings.mu1, fansiSettings.mu2,
+      fansiSettings.alpha0, fansiSettings.mu0,
+      fansiSettings.max_iter, fansiSettings.tol_update, false,
+      magField || 3.0, progress
+    ));
+  } else if (dipoleMethod === 'fansitgv') {
+    qsmResult = new Float64Array(wasmModule.fansi_wasm_with_progress(
+      localField, erodedMask, nx, ny, nz, vsx, vsy, vsz,
+      0, 0, 1,
+      fansitgvSettings.alpha1, fansitgvSettings.mu1, fansitgvSettings.mu2,
+      fansitgvSettings.alpha0, fansitgvSettings.mu0,
+      fansitgvSettings.max_iter, fansitgvSettings.tol_update, true,
+      magField || 3.0, progress
+    ));
+  } else if (dipoleMethod === 'l1qsm') {
+    qsmResult = new Float64Array(wasmModule.l1qsm_wasm_with_progress(
+      localField, erodedMask, nx, ny, nz, vsx, vsy, vsz,
+      0, 0, 1,
+      l1qsmSettings.alpha1, l1qsmSettings.mu1, l1qsmSettings.mu2,
+      l1qsmSettings.mu3, l1qsmSettings.lambda,
+      l1qsmSettings.max_iter, l1qsmSettings.tol_update,
+      magField || 3.0, progress
+    ));
+  } else if (dipoleMethod === 'whqsm') {
+    qsmResult = new Float64Array(wasmModule.whqsm_wasm_with_progress(
+      localField, erodedMask, nx, ny, nz, vsx, vsy, vsz,
+      0, 0, 1,
+      whqsmSettings.alpha1, whqsmSettings.mu1, whqsmSettings.mu2,
+      whqsmSettings.beta, whqsmSettings.muh,
+      whqsmSettings.max_iter, whqsmSettings.tol_update,
+      magField || 3.0, progress
+    ));
+  } else if (dipoleMethod === 'hdqsm') {
+    qsmResult = new Float64Array(wasmModule.hdqsm_wasm_with_progress(
+      localField, erodedMask, nx, ny, nz, vsx, vsy, vsz,
+      0, 0, 1,
+      hdqsmSettings.alpha_l2, hdqsmSettings.mu1_l2, hdqsmSettings.mu2,
+      hdqsmSettings.max_iter_l1, hdqsmSettings.max_iter_l2, hdqsmSettings.tol_update,
+      magField || 3.0, progress
+    ));
   } else if (dipoleMethod === 'ilsqr') {
     qsmResult = new Float64Array(wasmModule.ilsqr_wasm_with_progress(
       localField, erodedMask, nx, ny, nz, vsx, vsy, vsz,

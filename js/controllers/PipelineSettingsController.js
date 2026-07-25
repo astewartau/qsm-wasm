@@ -13,6 +13,7 @@ import {
   ISMV_DEFAULTS, PDF_DEFAULTS, LBV_DEFAULTS,
   TKD_DEFAULTS, TSVD_DEFAULTS, TIKHONOV_DEFAULTS,
   TV_DEFAULTS, RTS_DEFAULTS, NLTV_DEFAULTS, MEDI_DEFAULTS,
+  NDI_DEFAULTS, FANSI_DEFAULTS, L1QSM_DEFAULTS, WHQSM_DEFAULTS, HDQSM_DEFAULTS,
 } from '../app/config.js';
 
 export class PipelineSettingsController {
@@ -192,6 +193,12 @@ export class PipelineSettingsController {
     this._showEl('rts_settings', true);
     this._showEl('nltv_settings', false);
     this._showEl('medi_settings', false);
+    this._showEl('ndi_settings', false);
+    this._showEl('fansi_settings', false);
+    this._showEl('fansitgv_settings', false);
+    this._showEl('l1qsm_settings', false);
+    this._showEl('whqsm_settings', false);
+    this._showEl('hdqsm_settings', false);
     this._showEl('ilsqr_settings', false);
 
     this._setEl('tkdThreshold', TKD_DEFAULTS.threshold);
@@ -213,6 +220,49 @@ export class PipelineSettingsController {
     this._setEl('nltvMaxIter', NLTV_DEFAULTS.max_iter);
     this._setEl('nltvTol', NLTV_DEFAULTS.tol);
     this._setEl('nltvNewtonMaxIter', NLTV_DEFAULTS.newton_max_iter);
+
+    this._setEl('ndiTau', NDI_DEFAULTS.tau);
+    this._setEl('ndiAlpha', NDI_DEFAULTS.alpha);
+    this._setEl('ndiMaxIter', NDI_DEFAULTS.max_iter);
+
+    this._setEl('fansiAlpha1', FANSI_DEFAULTS.alpha1);
+    this._setEl('fansiMu1', FANSI_DEFAULTS.mu1);
+    this._setEl('fansiMu2', FANSI_DEFAULTS.mu2);
+    this._setEl('fansiAlpha0', FANSI_DEFAULTS.alpha0);
+    this._setEl('fansiMu0', FANSI_DEFAULTS.mu0);
+    this._setEl('fansiMaxIter', FANSI_DEFAULTS.max_iter);
+    this._setEl('fansiTolUpdate', FANSI_DEFAULTS.tol_update);
+
+    this._setEl('fansitgvAlpha1', FANSI_DEFAULTS.alpha1);
+    this._setEl('fansitgvMu1', FANSI_DEFAULTS.mu1);
+    this._setEl('fansitgvMu2', FANSI_DEFAULTS.mu2);
+    this._setEl('fansitgvAlpha0', FANSI_DEFAULTS.alpha0);
+    this._setEl('fansitgvMu0', FANSI_DEFAULTS.mu0);
+    this._setEl('fansitgvMaxIter', FANSI_DEFAULTS.max_iter);
+    this._setEl('fansitgvTolUpdate', FANSI_DEFAULTS.tol_update);
+
+    this._setEl('l1qsmAlpha1', L1QSM_DEFAULTS.alpha1);
+    this._setEl('l1qsmMu1', L1QSM_DEFAULTS.mu1);
+    this._setEl('l1qsmMu2', L1QSM_DEFAULTS.mu2);
+    this._setEl('l1qsmMu3', L1QSM_DEFAULTS.mu3);
+    this._setEl('l1qsmLambda', L1QSM_DEFAULTS.lambda);
+    this._setEl('l1qsmMaxIter', L1QSM_DEFAULTS.max_iter);
+    this._setEl('l1qsmTolUpdate', L1QSM_DEFAULTS.tol_update);
+
+    this._setEl('whqsmAlpha1', WHQSM_DEFAULTS.alpha1);
+    this._setEl('whqsmMu1', WHQSM_DEFAULTS.mu1);
+    this._setEl('whqsmMu2', WHQSM_DEFAULTS.mu2);
+    this._setEl('whqsmBeta', WHQSM_DEFAULTS.beta);
+    this._setEl('whqsmMuh', WHQSM_DEFAULTS.muh);
+    this._setEl('whqsmMaxIter', WHQSM_DEFAULTS.max_iter);
+    this._setEl('whqsmTolUpdate', WHQSM_DEFAULTS.tol_update);
+
+    this._setEl('hdqsmAlphaL2', HDQSM_DEFAULTS.alpha_l2);
+    this._setEl('hdqsmMu1L2', HDQSM_DEFAULTS.mu1_l2);
+    this._setEl('hdqsmMu2', HDQSM_DEFAULTS.mu2);
+    this._setEl('hdqsmMaxIterL1', HDQSM_DEFAULTS.max_iter_l1);
+    this._setEl('hdqsmMaxIterL2', HDQSM_DEFAULTS.max_iter_l2);
+    this._setEl('hdqsmTolUpdate', HDQSM_DEFAULTS.tol_update);
 
     this._setEl('mediLambda', MEDI_DEFAULTS.lambda);
     this._setEl('mediPercentage', MEDI_DEFAULTS.percentage);
@@ -407,6 +457,55 @@ export class PipelineSettingsController {
         max_iter: parseInt(this._getEl('nltvMaxIter')),
         tol: parseFloat(this._getEl('nltvTol')),
         newton_max_iter: parseInt(this._getEl('nltvNewtonMaxIter'))
+      },
+      ndi: {
+        tau: parseFloat(this._getEl('ndiTau')),
+        alpha: parseFloat(this._getEl('ndiAlpha')),
+        max_iter: parseInt(this._getEl('ndiMaxIter'))
+      },
+      fansi: {
+        alpha1: parseFloat(this._getEl('fansiAlpha1')),
+        mu1: parseFloat(this._getEl('fansiMu1')),
+        mu2: parseFloat(this._getEl('fansiMu2')),
+        alpha0: parseFloat(this._getEl('fansiAlpha0')),
+        mu0: parseFloat(this._getEl('fansiMu0')),
+        max_iter: parseInt(this._getEl('fansiMaxIter')),
+        tol_update: parseFloat(this._getEl('fansiTolUpdate'))
+      },
+      fansitgv: {
+        alpha1: parseFloat(this._getEl('fansitgvAlpha1')),
+        mu1: parseFloat(this._getEl('fansitgvMu1')),
+        mu2: parseFloat(this._getEl('fansitgvMu2')),
+        alpha0: parseFloat(this._getEl('fansitgvAlpha0')),
+        mu0: parseFloat(this._getEl('fansitgvMu0')),
+        max_iter: parseInt(this._getEl('fansitgvMaxIter')),
+        tol_update: parseFloat(this._getEl('fansitgvTolUpdate'))
+      },
+      l1qsm: {
+        alpha1: parseFloat(this._getEl('l1qsmAlpha1')),
+        mu1: parseFloat(this._getEl('l1qsmMu1')),
+        mu2: parseFloat(this._getEl('l1qsmMu2')),
+        mu3: parseFloat(this._getEl('l1qsmMu3')),
+        lambda: parseFloat(this._getEl('l1qsmLambda')),
+        max_iter: parseInt(this._getEl('l1qsmMaxIter')),
+        tol_update: parseFloat(this._getEl('l1qsmTolUpdate'))
+      },
+      whqsm: {
+        alpha1: parseFloat(this._getEl('whqsmAlpha1')),
+        mu1: parseFloat(this._getEl('whqsmMu1')),
+        mu2: parseFloat(this._getEl('whqsmMu2')),
+        beta: parseFloat(this._getEl('whqsmBeta')),
+        muh: parseFloat(this._getEl('whqsmMuh')),
+        max_iter: parseInt(this._getEl('whqsmMaxIter')),
+        tol_update: parseFloat(this._getEl('whqsmTolUpdate'))
+      },
+      hdqsm: {
+        alpha_l2: parseFloat(this._getEl('hdqsmAlphaL2')),
+        mu1_l2: parseFloat(this._getEl('hdqsmMu1L2')),
+        mu2: parseFloat(this._getEl('hdqsmMu2')),
+        max_iter_l1: parseInt(this._getEl('hdqsmMaxIterL1')),
+        max_iter_l2: parseInt(this._getEl('hdqsmMaxIterL2')),
+        tol_update: parseFloat(this._getEl('hdqsmTolUpdate'))
       },
       medi: {
         lambda: parseFloat(this._getEl('mediLambda')),
@@ -722,6 +821,12 @@ export class PipelineSettingsController {
     this._showEl('rts_settings', dipoleMethod === 'rts');
     this._showEl('nltv_settings', dipoleMethod === 'nltv');
     this._showEl('medi_settings', dipoleMethod === 'medi');
+    this._showEl('ndi_settings', dipoleMethod === 'ndi');
+    this._showEl('fansi_settings', dipoleMethod === 'fansi');
+    this._showEl('fansitgv_settings', dipoleMethod === 'fansitgv');
+    this._showEl('l1qsm_settings', dipoleMethod === 'l1qsm');
+    this._showEl('whqsm_settings', dipoleMethod === 'whqsm');
+    this._showEl('hdqsm_settings', dipoleMethod === 'hdqsm');
     this._showEl('ilsqr_settings', dipoleMethod === 'ilsqr');
 
     // TKD settings
@@ -751,6 +856,61 @@ export class PipelineSettingsController {
     this._setEl('nltvMaxIter', settings.nltv.max_iter);
     this._setEl('nltvTol', settings.nltv.tol);
     this._setEl('nltvNewtonMaxIter', settings.nltv.newton_max_iter);
+
+    // NDI settings
+    const ndi = settings.ndi || NDI_DEFAULTS;
+    this._setEl('ndiTau', ndi.tau);
+    this._setEl('ndiAlpha', ndi.alpha);
+    this._setEl('ndiMaxIter', ndi.max_iter);
+
+    // FANSI (Nonlinear TV) settings
+    const fansi = settings.fansi || FANSI_DEFAULTS;
+    this._setEl('fansiAlpha1', fansi.alpha1);
+    this._setEl('fansiMu1', fansi.mu1);
+    this._setEl('fansiMu2', fansi.mu2);
+    this._setEl('fansiAlpha0', fansi.alpha0);
+    this._setEl('fansiMu0', fansi.mu0);
+    this._setEl('fansiMaxIter', fansi.max_iter);
+    this._setEl('fansiTolUpdate', fansi.tol_update);
+
+    // FANSI (Nonlinear TGV) settings
+    const fansitgv = settings.fansitgv || FANSI_DEFAULTS;
+    this._setEl('fansitgvAlpha1', fansitgv.alpha1);
+    this._setEl('fansitgvMu1', fansitgv.mu1);
+    this._setEl('fansitgvMu2', fansitgv.mu2);
+    this._setEl('fansitgvAlpha0', fansitgv.alpha0);
+    this._setEl('fansitgvMu0', fansitgv.mu0);
+    this._setEl('fansitgvMaxIter', fansitgv.max_iter);
+    this._setEl('fansitgvTolUpdate', fansitgv.tol_update);
+
+    // L1-QSM settings
+    const l1qsm = settings.l1qsm || L1QSM_DEFAULTS;
+    this._setEl('l1qsmAlpha1', l1qsm.alpha1);
+    this._setEl('l1qsmMu1', l1qsm.mu1);
+    this._setEl('l1qsmMu2', l1qsm.mu2);
+    this._setEl('l1qsmMu3', l1qsm.mu3);
+    this._setEl('l1qsmLambda', l1qsm.lambda);
+    this._setEl('l1qsmMaxIter', l1qsm.max_iter);
+    this._setEl('l1qsmTolUpdate', l1qsm.tol_update);
+
+    // WH-QSM settings
+    const whqsm = settings.whqsm || WHQSM_DEFAULTS;
+    this._setEl('whqsmAlpha1', whqsm.alpha1);
+    this._setEl('whqsmMu1', whqsm.mu1);
+    this._setEl('whqsmMu2', whqsm.mu2);
+    this._setEl('whqsmBeta', whqsm.beta);
+    this._setEl('whqsmMuh', whqsm.muh);
+    this._setEl('whqsmMaxIter', whqsm.max_iter);
+    this._setEl('whqsmTolUpdate', whqsm.tol_update);
+
+    // HD-QSM settings
+    const hdqsm = settings.hdqsm || HDQSM_DEFAULTS;
+    this._setEl('hdqsmAlphaL2', hdqsm.alpha_l2);
+    this._setEl('hdqsmMu1L2', hdqsm.mu1_l2);
+    this._setEl('hdqsmMu2', hdqsm.mu2);
+    this._setEl('hdqsmMaxIterL1', hdqsm.max_iter_l1);
+    this._setEl('hdqsmMaxIterL2', hdqsm.max_iter_l2);
+    this._setEl('hdqsmTolUpdate', hdqsm.tol_update);
 
     // MEDI settings
     this._setEl('mediLambda', settings.medi.lambda);
@@ -809,6 +969,12 @@ export class PipelineSettingsController {
       this._showEl('rts_settings', method === 'rts');
       this._showEl('nltv_settings', method === 'nltv');
       this._showEl('medi_settings', method === 'medi');
+      this._showEl('ndi_settings', method === 'ndi');
+      this._showEl('fansi_settings', method === 'fansi');
+      this._showEl('fansitgv_settings', method === 'fansitgv');
+      this._showEl('l1qsm_settings', method === 'l1qsm');
+      this._showEl('whqsm_settings', method === 'whqsm');
+      this._showEl('hdqsm_settings', method === 'hdqsm');
       this._showEl('ilsqr_settings', method === 'ilsqr');
       this._onCombinedMethodChange(); // Re-check visibility for MEDI SMV
     });

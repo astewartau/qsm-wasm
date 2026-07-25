@@ -10,6 +10,8 @@ import {
   TGV_DEFAULTS,
   QSMART_DEFAULTS,
   RTS_DEFAULTS,
+  NDI_DEFAULTS,
+  HDQSM_DEFAULTS,
   STAGE_DISPLAY_NAMES,
   getVoxelBasedDefaults
 } from './config.js';
@@ -75,6 +77,23 @@ describe('Config Module', () => {
       expect(RTS_DEFAULTS.delta).toBe(0.15);
       expect(RTS_DEFAULTS.mu).toBe(100000);
       expect(RTS_DEFAULTS.max_iter).toBe(20);
+    });
+  });
+
+  describe('NDI_DEFAULTS', () => {
+    test('should have expected values', () => {
+      expect(NDI_DEFAULTS.tau).toBe(2);
+      expect(NDI_DEFAULTS.alpha).toBe(0.00001);
+      expect(NDI_DEFAULTS.max_iter).toBe(200);
+    });
+  });
+
+  describe('HDQSM_DEFAULTS', () => {
+    test('should have expected values', () => {
+      expect(HDQSM_DEFAULTS.alpha_l2).toBe(0.0001);
+      expect(HDQSM_DEFAULTS.mu1_l2).toBe(0.01);
+      expect(HDQSM_DEFAULTS.max_iter_l1).toBe(20);
+      expect(HDQSM_DEFAULTS.max_iter_l2).toBe(80);
     });
   });
 
