@@ -168,6 +168,18 @@ export const MEDI_DEFAULTS = {
   "tol": 0.1
 };
 
+export const TFI_DEFAULTS = {
+  "lambda": 0.000075,
+  "precond": 30,
+  "merit": false,
+  "data_weighting": 1,
+  "percentage": 0.9,
+  "cg_tol": 0.01,
+  "cg_max_iter": 100,
+  "max_iter": 10,
+  "tol": 0.1
+};
+
 export const QSMART_DEFAULTS = {
   "ilsqr_tol": 0.01,
   "ilsqr_max_iter": 50,
