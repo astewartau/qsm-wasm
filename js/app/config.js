@@ -17,7 +17,7 @@ const isModule = typeof exports !== 'undefined' || (typeof window !== 'undefined
 export const VERSION = '0.0.0';
 
 // QSM.rs core library version (the pinned qsm-core dependency tag in rust-wasm/Cargo.toml)
-export const QSM_RS_VERSION = '0.18.0';
+export const QSM_RS_VERSION = '0.23.0';
 
 // Physics constants
 export const PHYSICS = {
@@ -77,6 +77,7 @@ import {
   WHQSM_DEFAULTS as _WHQSM,
   HDQSM_DEFAULTS as _HDQSM,
   MEDI_DEFAULTS as _MEDI,
+  TFI_DEFAULTS as _TFI,
   QSMART_DEFAULTS as _QSMART,
   ROMEO_DEFAULTS as _ROMEO,
   MCPC3DS_DEFAULTS as _MCPC3DS,
@@ -316,6 +317,19 @@ export const MEDI_DEFAULTS = {
   data_weighting: _MEDI.data_weighting,
 };
 
+// TFI (preconditioned total field inversion) — single-step combined method (like TGV/QSMART).
+export const TFI_DEFAULTS = {
+  lambda: _TFI.lambda,
+  precond: _TFI.precond,
+  merit: _TFI.merit,
+  data_weighting: _TFI.data_weighting,
+  percentage: _TFI.percentage,
+  cg_tol: _TFI.cg_tol,
+  cg_max_iter: _TFI.cg_max_iter,
+  max_iter: _TFI.max_iter,
+  tol: _TFI.tol,
+};
+
 // Example data (downloaded from OSF during CI, served same-origin)
 export const EXAMPLE_DATA = {
   baseUrl: './data/example',
@@ -366,7 +380,7 @@ export const STAGE_DISPLAY_NAMES = {
 
 // Pipeline method options
 export const PIPELINE_METHODS = {
-  combined: ['none', 'tgv', 'qsmart'],
+  combined: ['none', 'tgv', 'qsmart', 'tfi'],
   unwrap: ['romeo', 'laplacian'],
   phaseOffset: ['mcpc3ds', 'none'],
   fieldCalculation: ['weighted_avg', 'linear_fit'],
@@ -383,6 +397,7 @@ export const PIPELINE_DEFAULTS = {
   swi: { ...SWI_DEFAULTS },
   tgv: { ...TGV_DEFAULTS },
   qsmart: { ...QSMART_DEFAULTS },
+  tfi: { ...TFI_DEFAULTS },
   unwrapping_algorithm: 'romeo',
   phase_offset_method: 'mcpc3ds',
   b0_estimation: 'weighted_avg',
@@ -479,6 +494,7 @@ const QSMConfig = {
   SWI_DEFAULTS,
   TGV_DEFAULTS,
   QSMART_DEFAULTS,
+  TFI_DEFAULTS,
   ROMEO_DEFAULTS,
   MCPC3DS_DEFAULTS,
   LINEAR_FIT_DEFAULTS,

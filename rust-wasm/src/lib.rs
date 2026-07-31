@@ -2939,6 +2939,7 @@ config_defaults!(get_l1qsm_defaults, qsmxt_config::config::L1qsmConfig);
 config_defaults!(get_whqsm_defaults, qsmxt_config::config::WhqsmConfig);
 config_defaults!(get_hdqsm_defaults, qsmxt_config::config::HdqsmConfig);
 config_defaults!(get_medi_defaults, qsmxt_config::config::MediConfig);
+config_defaults!(get_tfi_defaults, qsmxt_config::config::TfiConfig);
 config_defaults!(get_qsmart_defaults, qsmxt_config::config::QsmartConfig);
 config_defaults!(get_romeo_defaults, qsmxt_config::config::RomeoConfig);
 config_defaults!(get_mcpc3ds_defaults, qsmxt_config::config::Mcpc3dsConfig);

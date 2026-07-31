@@ -46,6 +46,7 @@ const defaults = {
   WHQSM_DEFAULTS: JSON.parse(wasmModule.get_whqsm_defaults()),
   HDQSM_DEFAULTS: JSON.parse(wasmModule.get_hdqsm_defaults()),
   MEDI_DEFAULTS: JSON.parse(wasmModule.get_medi_defaults()),
+  TFI_DEFAULTS: JSON.parse(wasmModule.get_tfi_defaults()),
   QSMART_DEFAULTS: JSON.parse(wasmModule.get_qsmart_defaults()),
   ROMEO_DEFAULTS: JSON.parse(wasmModule.get_romeo_defaults()),
   MCPC3DS_DEFAULTS: JSON.parse(wasmModule.get_mcpc3ds_defaults()),

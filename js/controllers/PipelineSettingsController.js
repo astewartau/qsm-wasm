@@ -12,7 +12,7 @@ import {
   VSHARP_DEFAULTS, SHARP_DEFAULTS, RESHARP_DEFAULTS, HARPERELLA_DEFAULTS,
   ISMV_DEFAULTS, PDF_DEFAULTS, LBV_DEFAULTS,
   TKD_DEFAULTS, TSVD_DEFAULTS, TIKHONOV_DEFAULTS,
-  TV_DEFAULTS, RTS_DEFAULTS, NLTV_DEFAULTS, MEDI_DEFAULTS,
+  TV_DEFAULTS, RTS_DEFAULTS, NLTV_DEFAULTS, MEDI_DEFAULTS, TFI_DEFAULTS,
   NDI_DEFAULTS, FANSI_DEFAULTS, L1QSM_DEFAULTS, WHQSM_DEFAULTS, HDQSM_DEFAULTS,
 } from '../app/config.js';
 
@@ -67,6 +67,10 @@ export class PipelineSettingsController {
     this._setEl('tgvRegularization', 2); // UI preset level (qsmbly-specific)
     this._setEl('tgvIterations', TGV_DEFAULTS.iterations);
     this._setEl('tgvErosions', TGV_DEFAULTS.erosions);
+
+    // TFI defaults
+    this._setEl('tfiLambda', TFI_DEFAULTS.lambda);
+    this._setEl('tfiPrecond', TFI_DEFAULTS.precond);
 
     // SWI defaults
     this._setEl('swiScaling', SWI_DEFAULTS.scaling);
@@ -319,6 +323,11 @@ export class PipelineSettingsController {
         iterations: parseInt(this._getEl('tgvIterations')),
         erosions: parseInt(this._getEl('tgvErosions'))
       },
+      tfi: {
+        ...TFI_DEFAULTS,
+        lambda: parseFloat(this._getEl('tfiLambda')),
+        precond: parseFloat(this._getEl('tfiPrecond'))
+      },
       qsmart: {
         sdf_sigma1_stage1: parseFloat(this._getEl('qsmartSdfSigma1Stage1')),
         sdf_sigma2_stage1: parseFloat(this._getEl('qsmartSdfSigma2Stage1')),
@@ -540,7 +549,8 @@ export class PipelineSettingsController {
     const phase_offset_method = this._getEl('phase_offset_method') || 'mcpc3ds';
     const isTgv = combined_method === 'tgv';
     const isQsmart = combined_method === 'qsmart';
-    const isCombined = isTgv || isQsmart;
+    const isTfi = combined_method === 'tfi';
+    const isCombined = isTgv || isQsmart || isTfi;
     const isMcpc3ds = phase_offset_method === 'mcpc3ds';
     const isMultiEcho = nEchoes > 1;
 
@@ -554,6 +564,9 @@ export class PipelineSettingsController {
     // QSMART settings - show when QSMART selected in any mode
     this._showEl('qsmart_settings', isQsmart);
     if (isQsmart) this._updateQsmartInnerVisibility();
+
+    // TFI settings - show when TFI selected in any mode
+    this._showEl('tfi_settings', isTfi);
 
     // Phase unwrapping (check this first — Laplacian disables offset removal + bipolar)
     const currentUnwrapMethod = this._getEl('unwrapping_algorithm') || 'romeo';

@@ -18,6 +18,7 @@ export function buildConfig(settings, options = {}) {
 
   const isTgv = settings.combined_method === 'tgv';
   const isQsmart = settings.combined_method === 'qsmart';
+  const isTfi = settings.combined_method === 'tfi';
 
   const config = {
     pipeline: {
@@ -50,6 +51,7 @@ export function buildConfig(settings, options = {}) {
 
   if (isTgv) config.inversion.algorithm = 'tgv';
   else if (isQsmart) config.inversion.algorithm = 'qsmart';
+  else if (isTfi) config.inversion.algorithm = 'tfi';
   else {
     // Translate qsmbly dropdown value -> qsmxt-config serde string.
     // 'fansitgv' maps to 'fansi-tgv'; all others pass through unchanged.
@@ -71,6 +73,12 @@ export function buildConfig(settings, options = {}) {
   if (settings.whqsm) config.inversion.whqsm = settings.whqsm;
   if (settings.hdqsm) config.inversion.hdqsm = settings.hdqsm;
   if (settings.medi) config.inversion.medi = settings.medi;
+  if (settings.tfi) config.inversion.tfi = {
+    lambda: settings.tfi.lambda, precond: settings.tfi.precond, merit: settings.tfi.merit,
+    data_weighting: settings.tfi.data_weighting, percentage: settings.tfi.percentage,
+    cg_tol: settings.tfi.cg_tol, cg_max_iter: settings.tfi.cg_max_iter,
+    max_iter: settings.tfi.max_iter, tol: settings.tfi.tol,
+  };
   if (settings.ilsqr) config.inversion.ilsqr = settings.ilsqr;
   if (settings.tgv) config.inversion.tgv = {
     iterations: settings.tgv.iterations, erosions: settings.tgv.erosions,
