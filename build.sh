@@ -12,11 +12,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUST_DIR="$SCRIPT_DIR/rust-wasm"
 WASM_DIR="$SCRIPT_DIR/wasm"
 
-# Parse arguments
-SIMD_FLAG=""
+# Parse arguments. `onnx` is always on — it provides the deep-learning models (their
+# weights are fetched in JS, not by the wasm). `--simd` adds SIMD acceleration.
+FEATURES="onnx"
 BUILD_TYPE="standard"
 if [[ "$1" == "--simd" ]]; then
-    SIMD_FLAG="--features simd"
+    FEATURES="onnx,simd"
     BUILD_TYPE="SIMD-accelerated"
 fi
 
@@ -43,7 +44,7 @@ if [[ -n "$SIMD_FLAG" ]]; then
     echo "      SIMD acceleration enabled (requires Chrome 91+, Firefox 89+, Safari 16.4+)"
 fi
 cd "$RUST_DIR"
-wasm-pack build --target web --release $SIMD_FLAG
+wasm-pack build --target web --release --features "$FEATURES"
 
 echo ""
 echo "[2/4] Generating algorithm defaults from QSM.rs..."

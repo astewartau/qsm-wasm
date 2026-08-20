@@ -44,7 +44,11 @@ export function buildConfig(settings, options = {}) {
       },
     },
     masking: { inhomogeneity_correction: true },
-    bg_removal: { algorithm: settings.bf_algorithm || 'vsharp' },
+    bg_removal: {
+      algorithm: settings.bf_algorithm || 'vsharp',
+      // mSMV boundary-shadow refinement (Roberts 2024): a post-step on the primary BFR.
+      msmv_refine: !!settings.msmv_refine,
+    },
     inversion: {},
     qsm: { reference: settings.reference_mean === false ? 'none' : 'mean' },
   };
@@ -72,6 +76,8 @@ export function buildConfig(settings, options = {}) {
   if (settings.l1qsm) config.inversion.l1qsm = settings.l1qsm;
   if (settings.whqsm) config.inversion.whqsm = settings.whqsm;
   if (settings.hdqsm) config.inversion.hdqsm = settings.hdqsm;
+  if (settings.amp_pe) config.inversion.amp_pe = settings.amp_pe;
+  if (settings.msmv) config.bg_removal.msmv = settings.msmv;
   if (settings.medi) config.inversion.medi = settings.medi;
   if (settings.tfi) config.inversion.tfi = {
     lambda: settings.tfi.lambda, precond: settings.tfi.precond, merit: settings.tfi.merit,

@@ -3257,3 +3257,238 @@ pub fn hz_to_ppm_wasm(field_hz: &[f64], field_strength: f64) -> Vec<f64> {
 pub fn rads_to_ppm_wasm(field_rads: &[f64], field_strength: f64) -> Vec<f64> {
     qsm_core::pipeline::rads_to_ppm(field_rads, field_strength)
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Chi-separation (susceptibility source separation)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Treat an empty slice as "input not provided" (`None`) for the separation dispatcher.
+/// A free fn (not a closure) so the borrow is properly higher-ranked over the lifetime.
+fn opt_slice(s: &[f64]) -> Option<&[f64]> {
+    if s.is_empty() { None } else { Some(s) }
+}
+
+/// Run a **classical** χ-separation method (r2star-qsm / decompose / chi-sep-ilsqr /
+/// chi-sep-medi / wavesep / hc-chisep — the method comes from `config_toml`).
+///
+/// Provide whatever the chosen method needs; pass an empty slice for inputs it doesn't use.
+/// Returns `[chi_pos ; chi_neg ; chi_total]` concatenated (`3 * nx*ny*nz`). `magnitude_multi`
+/// is voxel-major `(n_voxels, n_echoes)`.
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn run_separation_wasm(
+    local_field_ppm: &[f64], qsm: &[f64], mask: &[u8],
+    r2prime: &[f64], r2star: &[f64], magnitude_rss: &[f64], magnitude_multi: &[f64],
+    nx: usize, ny: usize, nz: usize,
+    vsx: f64, vsy: f64, vsz: f64,
+    echo_times: &[f64], field_strength: f64,
+    bx: f64, by: f64, bz: f64,
+    config_toml: &str,
+) -> Vec<f64> {
+    let n = nx * ny * nz;
+    let config = qsmxt_config::PipelineConfig::from_toml(config_toml).unwrap_or_default();
+    let sep_config = qsmxt_config::bridge::to_separation_config(&config);
+    let meta = qsmxt_config::to_scan_metadata(
+        (nx, ny, nz), (vsx, vsy, vsz), echo_times, field_strength, (bx, by, bz),
+    );
+    let inputs = qsm_core::pipeline::SeparationInputs {
+        local_field_ppm, qsm, mask,
+        r2prime: opt_slice(r2prime), r2star: opt_slice(r2star),
+        magnitude_rss: opt_slice(magnitude_rss), magnitude_multi: opt_slice(magnitude_multi),
+        se_magnitude_multi: None,
+    };
+    match qsm_core::pipeline::run_separation(inputs, &meta, &sep_config, &mut |_, _| {}) {
+        Ok(r) => {
+            let mut out = r.chi_pos;
+            out.extend(r.chi_neg);
+            out.extend(r.chi_total);
+            out
+        }
+        Err(e) => {
+            console_log!("run_separation_wasm error: {}", e);
+            vec![0.0; 3 * n]
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Relaxometry — R2 (EPG from MESE) and R2' = R2* − R2
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// R2 map (1/s) from multi-echo spin-echo magnitude via EPG (models B1 < 1 refocusing).
+/// `magnitude_multi` is voxel-major `(n_voxels, n_echoes)`; `echo_times` in seconds.
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn r2_epg_wasm(
+    magnitude_multi: &[f64], mask: &[u8], echo_times: &[f64],
+    nx: usize, ny: usize, nz: usize, vsx: f64, vsy: f64, vsz: f64,
+) -> Vec<f64> {
+    let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
+    let (r2, _b1) = qsm_core::relaxometry::r2_epg(
+        magnitude_multi, mask, echo_times, &grid, &qsm_core::relaxometry::R2EpgParams::default(), None,
+    );
+    r2
+}
+
+/// R2' (1/s) = R2* − R2 (clamped ≥ 0 inside the mask). Inputs in 1/s.
+#[wasm_bindgen]
+pub fn r2prime_wasm(r2star: &[f64], r2: &[f64], mask: &[u8]) -> Vec<f64> {
+    qsm_core::relaxometry::r2prime(r2star, r2, mask)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Deep-learning model registry (metadata for the JS weight fetcher/cache)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// JSON array describing every registered deep-learning model: `id`, `name`, `stage`,
+/// `size_divisor`, `inputs`/`outputs`, and per-file `{name, url, sha256, bytes}`. The JS
+/// layer uses this to fetch + cache weights (WASM can't download itself) and to size the
+/// download UI.
+#[wasm_bindgen]
+pub fn get_model_registry_wasm() -> String {
+    let arr: Vec<serde_json::Value> = qsm_core::models::all_models().iter().map(|m| {
+        let files: Vec<serde_json::Value> = m.files.iter().map(|f| serde_json::json!({
+            "name": f.name, "url": f.url, "sha256": f.sha256, "bytes": f.bytes,
+        })).collect();
+        serde_json::json!({
+            "id": m.id, "name": m.name, "stage": format!("{:?}", m.stage),
+            "size_divisor": m.size_divisor, "available": m.is_available(),
+            "inputs": m.inputs, "outputs": m.outputs, "files": files,
+        })
+    }).collect();
+    serde_json::to_string(&serde_json::Value::Array(arr)).unwrap_or_else(|_| "[]".into())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Deep-learning inference (ONNX). WASM can't download weights, so JS fetches the
+// bytes (see get_model_registry_wasm) and passes them in. Requires the `onnx` feature.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// DL dipole inversion from a **field** → susceptibility (ppm). `model_id` picks the net:
+/// xqsm/qsmnet/qsmnet-plus/qsmgan/ir2qsm/lpcnn/modl-qsm take a **local** field; autoqsm and
+/// nextqsm take the **total** field (they do their own background removal). `weights2` is only
+/// used by nextqsm (its second U-Net); pass an empty slice otherwise.
+#[cfg(feature = "onnx")]
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn run_dl_field_inversion_wasm(
+    model_id: &str, field_ppm: &[f64], mask: &[u8],
+    nx: usize, ny: usize, nz: usize, vsx: f64, vsy: f64, vsz: f64,
+    bx: f64, by: f64, bz: f64,
+    weights: &[u8], weights2: &[u8],
+) -> Vec<f64> {
+    use qsm_core::inversion as inv;
+    let n = nx * ny * nz;
+    let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
+    let bdir = (bx, by, bz);
+    let res = match model_id {
+        "xqsm" => inv::xqsm(field_ppm, mask, &grid, weights),
+        "qsmnet" => inv::qsmnet(field_ppm, mask, &grid, weights, &inv::QsmnetNorm::qsmnet()),
+        "qsmnet-plus" => inv::qsmnet(field_ppm, mask, &grid, weights, &inv::QsmnetNorm::qsmnet_plus()),
+        "qsmgan" => inv::qsmgan(field_ppm, mask, &grid, weights),
+        "ir2qsm" => inv::ir2qsm(field_ppm, mask, &grid, weights),
+        "lpcnn" => inv::lpcnn(field_ppm, mask, &grid, bdir, weights),
+        "modl-qsm" => inv::modl_qsm(field_ppm, mask, &grid, bdir, weights),
+        "autoqsm" => inv::autoqsm(field_ppm, mask, &grid, weights),
+        "nextqsm" => inv::nextqsm(field_ppm, mask, &grid, bdir, weights, weights2),
+        other => {
+            console_log!("run_dl_field_inversion_wasm: unknown model '{}'", other);
+            return vec![0.0; n];
+        }
+    };
+    match res {
+        Ok(chi) => chi,
+        Err(e) => { console_log!("{} inference error: {}", model_id, e); vec![0.0; n] }
+    }
+}
+
+/// DL background removal (BFRnet): total field → local field (ppm). BFRnet preserves the
+/// brain edge (no erosion).
+#[cfg(feature = "onnx")]
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn run_dl_bg_removal_wasm(
+    model_id: &str, field_ppm: &[f64], mask: &[u8],
+    nx: usize, ny: usize, nz: usize, vsx: f64, vsy: f64, vsz: f64,
+    weights: &[u8],
+) -> Vec<f64> {
+    let n = nx * ny * nz;
+    let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
+    let res = match model_id {
+        "bfrnet" => qsm_core::bgremove::bfrnet(field_ppm, mask, &grid, weights),
+        other => {
+            console_log!("run_dl_bg_removal_wasm: unknown model '{}'", other);
+            return vec![0.0; n];
+        }
+    };
+    match res {
+        Ok(local) => local,
+        Err(e) => { console_log!("{} inference error: {}", model_id, e); vec![0.0; n] }
+    }
+}
+
+/// End-to-end DL reconstruction from wrapped **phase**: iqsm/iqsm-plus → susceptibility (ppm);
+/// iqfm → local field (ppm). `phases_flat` is `n_echoes` volumes concatenated (voxel-major per
+/// echo); `echo_times` in seconds; `b0` field strength (T).
+#[cfg(feature = "onnx")]
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn run_dl_phase_recon_wasm(
+    model_id: &str, phases_flat: &[f64], n_echoes: usize, mask: &[u8],
+    nx: usize, ny: usize, nz: usize, vsx: f64, vsy: f64, vsz: f64,
+    echo_times: &[f64], b0: f64, bx: f64, by: f64, bz: f64,
+    weights: &[u8],
+) -> Vec<f64> {
+    use qsm_core::inversion as inv;
+    let n = nx * ny * nz;
+    let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
+    let phases: Vec<&[f64]> = (0..n_echoes).map(|e| &phases_flat[e * n..(e + 1) * n]).collect();
+    let mags: Vec<&[f64]> = Vec::new(); // uniform weighting (magnitude combine handled upstream)
+    let bdir = (bx, by, bz);
+    let (sign, erode) = (-1.0, 3);
+    let res = match model_id {
+        "iqsm" => inv::iqsm_multi_echo(&phases, &mags, mask, &grid, echo_times, b0, sign, erode, weights),
+        "iqsm-plus" => inv::iqsm_plus_multi_echo(&phases, &mags, mask, &grid, echo_times, b0, bdir, sign, erode, weights),
+        "iqfm" => inv::iqfm_multi_echo(&phases, &mags, mask, &grid, echo_times, b0, sign, erode, weights),
+        other => {
+            console_log!("run_dl_phase_recon_wasm: unknown model '{}'", other);
+            return vec![0.0; n];
+        }
+    };
+    match res {
+        Ok(v) => v,
+        Err(e) => { console_log!("{} inference error: {}", model_id, e); vec![0.0; n] }
+    }
+}
+
+/// DL χ-separation (susep-net / chi-sepnet) from local field + QSM + R2' → `[chi_pos ; chi_neg ;
+/// chi_total]` concatenated (`3 * nx*ny*nz`).
+#[cfg(feature = "onnx")]
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn run_dl_separation_wasm(
+    model_id: &str, local_field_ppm: &[f64], qsm: &[f64], r2prime: &[f64], mask: &[u8],
+    nx: usize, ny: usize, nz: usize, vsx: f64, vsy: f64, vsz: f64,
+    weights: &[u8],
+) -> Vec<f64> {
+    use qsm_core::separation as sep;
+    let n = nx * ny * nz;
+    let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
+    let res = match model_id {
+        "susep-net" => sep::susep_net(local_field_ppm, qsm, r2prime, mask, &grid, weights, &sep::SusepNetNorm::default()),
+        "chi-sepnet" => sep::chisepnet(local_field_ppm, qsm, r2prime, mask, &grid, weights, &sep::ChiSepNetNorm::default()),
+        other => {
+            console_log!("run_dl_separation_wasm: unknown model '{}'", other);
+            return vec![0.0; 3 * n];
+        }
+    };
+    match res {
+        Ok((pos, neg, tot)) => {
+            let mut out = pos;
+            out.extend(neg);
+            out.extend(tot);
+            out
+        }
+        Err(e) => { console_log!("{} inference error: {}", model_id, e); vec![0.0; 3 * n] }
+    }
+}
