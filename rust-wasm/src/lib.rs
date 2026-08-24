@@ -23,6 +23,12 @@ pub fn init() {
     console_error_panic_hook::set_once();
 }
 
+// Rayon threadpool bootstrap for wasm. JS must `await init_thread_pool(n)` once after module
+// init (before any rayon-backed call) on a cross-origin-isolated page. Only present in threaded
+// (`parallel`) builds; single-threaded builds omit it and the JS falls back gracefully.
+#[cfg(feature = "parallel")]
+pub use wasm_bindgen_rayon::init_thread_pool;
+
 /// Gyromagnetic ratio of hydrogen protons (Hz/T)
 const GYROMAGNETIC_RATIO: f64 = 42.576e6;
 
@@ -3368,6 +3374,13 @@ pub fn get_model_registry_wasm() -> String {
 /// xqsm/qsmnet/qsmnet-plus/qsmgan/ir2qsm/lpcnn/modl-qsm take a **local** field; autoqsm and
 /// nextqsm take the **total** field (they do their own background removal). `weights2` is only
 /// used by nextqsm (its second U-Net); pass an empty slice otherwise.
+///
+/// `tiled` requests overlap-tiled inference (bounded memory) for the whole-volume nets that
+/// otherwise OOM the 32-bit WASM heap on clinical-size data (xqsm, qsmnet, ir2qsm, …). It is an
+/// **approximation** — the result matches whole-volume at r≈0.94 but drifts ~30% in low
+/// spatial frequencies — so callers should label tiled output as approximate. Models that are
+/// already patch-based (qsmgan, autoqsm) ignore the flag; nets with global k-space steps
+/// (lpcnn, modl-qsm, nextqsm) can't be tiled and fall back to whole-volume.
 #[cfg(feature = "onnx")]
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
@@ -3375,26 +3388,59 @@ pub fn run_dl_field_inversion_wasm(
     model_id: &str, field_ppm: &[f64], mask: &[u8],
     nx: usize, ny: usize, nz: usize, vsx: f64, vsy: f64, vsz: f64,
     bx: f64, by: f64, bz: f64,
-    weights: &[u8], weights2: &[u8],
+    weights: &[u8], weights2: &[u8], tiled: bool, tile_core: usize, tile_halo: usize,
+    progress_callback: &js_sys::Function,
 ) -> Vec<f64> {
     use qsm_core::inversion as inv;
     let n = nx * ny * nz;
     let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
     let bdir = (bx, by, bz);
-    let res = match model_id {
-        "xqsm" => inv::xqsm(field_ppm, mask, &grid, weights),
-        "qsmnet" => inv::qsmnet(field_ppm, mask, &grid, weights, &inv::QsmnetNorm::qsmnet()),
-        "qsmnet-plus" => inv::qsmnet(field_ppm, mask, &grid, weights, &inv::QsmnetNorm::qsmnet_plus()),
-        "qsmgan" => inv::qsmgan(field_ppm, mask, &grid, weights),
-        "ir2qsm" => inv::ir2qsm(field_ppm, mask, &grid, weights),
-        "lpcnn" => inv::lpcnn(field_ppm, mask, &grid, bdir, weights),
-        "modl-qsm" => inv::modl_qsm(field_ppm, mask, &grid, bdir, weights),
-        "autoqsm" => inv::autoqsm(field_ppm, mask, &grid, weights),
-        "nextqsm" => inv::nextqsm(field_ppm, mask, &grid, bdir, weights, weights2),
-        other => {
-            console_log!("run_dl_field_inversion_wasm: unknown model '{}'", other);
-            return vec![0.0; n];
+    // Per-tile progress → JS (done, total). Non-tiled nets never call it (bar just sits at start).
+    let prog_cb = progress_callback.clone();
+    let on_tile = move |done: usize, total: usize| {
+        let _ = prog_cb.call2(&JsValue::null(), &JsValue::from(done as u32), &JsValue::from(total as u32));
+    };
+    // Browser memory is the constraint (unlike native): the proven-safe patch is ~64³, matching
+    // the natively-patch-based nets (qsmgan/autoqsm). Caller passes core/halo; 0 → a 64³-patch
+    // default (core 48 + halo 8). This is much smaller than qsm-core's native TileConfig default.
+    let cfg = if tile_core > 0 {
+        inv::TileConfig { core: tile_core, halo: tile_halo }
+    } else {
+        inv::TileConfig { core: 56, halo: 4 } // 64³ patch (browser-safe), minimal overlap waste
+    };
+    // Tiled variants for the fully-convolutional whole-volume nets (bounded WASM memory).
+    let tiled_res = if tiled {
+        match model_id {
+            "xqsm" => Some(inv::xqsm_tiled(field_ppm, mask, &grid, weights, &cfg, on_tile)),
+            "qsmnet" => Some(inv::qsmnet_tiled(field_ppm, mask, &grid, weights, &inv::QsmnetNorm::qsmnet(), &cfg, on_tile)),
+            "qsmnet-plus" => Some(inv::qsmnet_tiled(field_ppm, mask, &grid, weights, &inv::QsmnetNorm::qsmnet_plus(), &cfg, on_tile)),
+            "ir2qsm" => Some(inv::ir2qsm_tiled(field_ppm, mask, &grid, weights, &cfg, on_tile)),
+            // FFT-unrolled nets: whole-algorithm tiling (off-design, approximate — the UI warns).
+            "lpcnn" => Some(inv::lpcnn_tiled(field_ppm, mask, &grid, bdir, weights, &cfg, on_tile)),
+            "modl-qsm" => Some(inv::modl_qsm_tiled(field_ppm, mask, &grid, bdir, weights, &cfg, on_tile)),
+            "nextqsm" => Some(inv::nextqsm_tiled(field_ppm, mask, &grid, bdir, weights, weights2, &cfg, on_tile)),
+            _ => None, // not-yet-tiled or intrinsically un-tileable → whole-volume below
         }
+    } else {
+        None
+    };
+    let res = match tiled_res {
+        Some(r) => r,
+        None => match model_id {
+            "xqsm" => inv::xqsm(field_ppm, mask, &grid, weights),
+            "qsmnet" => inv::qsmnet(field_ppm, mask, &grid, weights, &inv::QsmnetNorm::qsmnet()),
+            "qsmnet-plus" => inv::qsmnet(field_ppm, mask, &grid, weights, &inv::QsmnetNorm::qsmnet_plus()),
+            "qsmgan" => inv::qsmgan(field_ppm, mask, &grid, weights),
+            "ir2qsm" => inv::ir2qsm(field_ppm, mask, &grid, weights),
+            "lpcnn" => inv::lpcnn(field_ppm, mask, &grid, bdir, weights),
+            "modl-qsm" => inv::modl_qsm(field_ppm, mask, &grid, bdir, weights),
+            "autoqsm" => inv::autoqsm(field_ppm, mask, &grid, weights),
+            "nextqsm" => inv::nextqsm(field_ppm, mask, &grid, bdir, weights, weights2),
+            other => {
+                console_log!("run_dl_field_inversion_wasm: unknown model '{}'", other);
+                return vec![0.0; n];
+            }
+        },
     };
     match res {
         Ok(chi) => chi,

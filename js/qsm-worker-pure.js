@@ -12,6 +12,93 @@ import { boxFilter3D, boxFilter3dSeparable } from './worker/utils/FilterUtils.js
 import { computeFieldMap } from './worker/utils/FieldMapping.js';
 import { buildConfigJson } from './modules/ConfigBridge.js';
 import * as QSMConfig from './app/config.js';
+import { parseRegistry, fetchModelWeights, loadDlWasm } from './modules/ModelWeights.js';
+
+// Deep-learning model registry (id -> spec), populated from the base wasm after init, and
+// the base URL for lazy-loading the DL wasm bundle. See ModelWeights.js.
+let dlRegistry = {};
+let wasmBaseUrl = '';
+const DL_TOTAL_FIELD_MODELS = new Set(['autoqsm', 'nextqsm']); // take the total field (own BFR)
+// Whole-volume nets that would OOM the 32-bit WASM heap on clinical data but have an
+// overlap-tiled variant in qsm-core → run tiled (bounded memory, ~approximate). qsmgan/autoqsm
+// already tile natively (no flag needed); lpcnn/modl-qsm/nextqsm can't tile.
+const DL_TILEABLE = new Set(['xqsm', 'qsmnet', 'qsmnet-plus', 'ir2qsm', 'lpcnn', 'modl-qsm', 'nextqsm']);
+const isDlModel = (id) => Object.prototype.hasOwnProperty.call(dlRegistry, id);
+
+/** Resolve the configured weight-host base to an absolute URL (or '' to use registry URLs). */
+function weightBaseUrl() {
+  const base = QSMConfig.MODEL_WEIGHT_BASE_URL || '';
+  if (!base) return '';
+  return /^https?:\/\//i.test(base) ? base : `${wasmBaseUrl}/${base.replace(/^\//, '')}`;
+}
+
+/** Fetch a DL model's weight files (IndexedDB-cached) with progress reported to the UI. */
+async function downloadWeights(model) {
+  const totalBytes = model.files.reduce((a, f) => a + (Number(f.bytes) || 0), 0);
+  postLog(`Preparing ${model.name} weights (~${(totalBytes / 1e6).toFixed(0)} MB, cached after first download)...`);
+  return fetchModelWeights(model, (idx, name, done, total, cached) => {
+    if (cached) {
+      postLog(`  ${name}: using cached weights`);
+    } else {
+      const frac = total ? done / total : 0;
+      postProgress(0.63 + frac * 0.03,
+        `Downloading ${model.name}: ${(done / 1e6).toFixed(1)}/${(total / 1e6).toFixed(1)} MB`);
+    }
+  }, weightBaseUrl());
+}
+
+// Track which wasm modules already have a rayon pool (each bundle is a separate module/memory
+// with its own threadpool, so each is initialized independently and at most once).
+const _rayonReady = new WeakSet();
+
+/** Boot a wasm-bindgen-rayon threadpool for `mod`, if this is a threaded build on a
+ *  cross-origin-isolated page. No-op (stays single-threaded) otherwise. `threads` bounds the
+ *  pool — for the DL module this also bounds how many tiles run at once (each holds a full
+ *  patch's activations in the single shared heap). */
+async function initRayon(mod, label, threads) {
+  try {
+    if (!mod || typeof mod.initThreadPool !== 'function') return; // single-threaded build
+    if (typeof SharedArrayBuffer === 'undefined' || !self.crossOriginIsolated) {
+      postLog(`  (single-threaded — page is not cross-origin isolated; serve with COOP/COEP for threads)`);
+      return;
+    }
+    if (_rayonReady.has(mod)) return;
+    const hw = Math.max(1, self.navigator?.hardwareConcurrency || 4);
+    const n = Math.max(1, Math.min(threads || hw, hw));
+    await mod.initThreadPool(n);
+    _rayonReady.add(mod);
+    postLog(`Threadpool ready: ${n} threads [${label}]`);
+  } catch (e) {
+    console.warn(`initThreadPool [${label}] failed; continuing single-threaded:`, e);
+  }
+}
+
+/** Run a field-input DL inversion (local or total field → χ) in the lazy-loaded onnx bundle.
+ *  `onProgress(done, total)` reports per-tile progress for tiled nets. `tiling` = the modal's
+ *  dl_tiling settings ({enabled, tile_size, tile_halo}); defaults keep tiling on for supported
+ *  models with a browser-safe 64³ patch. */
+async function runDlFieldInversion(model, field, mask, nx, ny, nz, vsx, vsy, vsz, onProgress, tiling) {
+  const weights = await downloadWeights(model);
+  const dl = await loadDlWasm(wasmBaseUrl, QSMConfig.VERSION);
+  // Bound the DL pool so concurrent tiles don't exhaust the shared 32-bit heap (each tile holds
+  // its own patch activations). 4 is a safe default for ~64³ patches; tunable later.
+  await initRayon(dl, 'dl', 4);
+  postLog(`Running ${model.name} (deep-learning dipole inversion)...`);
+  postProgress(0.7, `${model.name} inference...`);
+  const w2 = weights[1] || new Uint8Array(0);
+  const t = tiling || {};
+  // Tiling on/off comes from the settings modal; default on for models with a tiled variant.
+  const tiled = t.enabled !== undefined ? t.enabled !== false : DL_TILEABLE.has(model.id);
+  // Browser-safe default 64³ patch (core 56 + halo 4): the size the natively-patch-based nets use,
+  // proven not to OOM the 32-bit wasm heap; large core + thin halo minimizes overlap recompute.
+  const tileCore = Number(t.tile_size) || 56;
+  const tileHalo = Number.isFinite(Number(t.tile_halo)) ? Number(t.tile_halo) : 4;
+  if (tiled) postLog(`  tiled inference (${tileCore + 2 * tileHalo}³ patches, bounded memory; approximate vs whole-volume)`);
+  const cb = onProgress || (() => {});
+  return new Float64Array(dl.run_dl_field_inversion_wasm(
+    model.id, field, mask, nx, ny, nz, vsx, vsy, vsz, 0, 0, 1, weights[0], w2, tiled, tileCore, tileHalo, cb,
+  ));
+}
 
 let wasmModule = null;
 
@@ -124,6 +211,22 @@ async function initializeWasm() {
     const module = await import(jsUrl);
     await module.default(wasmBinaryUrl);
     wasmModule = module;
+    wasmBaseUrl = baseUrl;
+
+    // Spin up the rayon threadpool (threaded builds only, and only on a cross-origin-isolated
+    // page). Parallelizes all classical qsm-core algorithms. Non-threaded builds omit
+    // initThreadPool; a non-isolated page has no SharedArrayBuffer → skip and stay single-thread.
+    await initRayon(wasmModule, 'base');
+
+    // Deep-learning model registry (urls/sizes/hashes) — the base wasm always exposes it;
+    // the heavier onnx wasm bundle is lazy-loaded only when a DL algorithm actually runs.
+    try {
+      if (wasmModule.get_model_registry_wasm) {
+        dlRegistry = parseRegistry(wasmModule.get_model_registry_wasm());
+      }
+    } catch (e) {
+      console.warn('DL model registry unavailable:', e);
+    }
 
     if (wasmModule.wasm_health_check()) {
       postLog(`QSMbly v${wasmModule.get_version()} ready`);
@@ -453,12 +556,28 @@ async function runPipeline(data) {
     const invProgress = (current, total) => {
       postProgress(0.67 + (current / total) * 0.25, `${dipoleMethod.toUpperCase()}: ${current}/${total}`);
     };
-    let qsmResult = new Float64Array(wasmModule.run_dipole_inversion_wasm(
-      localField, erodedMask, nx, ny, nz, vsx, vsy, vsz,
-      magField || 3.0, new Float64Array(echoTimesSec),
-      0, 0, 1, magnitudeForInversion,
-      configToml, invProgress,
-    ));
+    let qsmResult;
+    if (isDlModel(dipoleMethod)) {
+      // Deep-learning inversion: fetch weights in JS (WASM can't download) + run in the
+      // lazy-loaded onnx bundle. AutoQSM/NeXtQSM consume the TOTAL field (own BFR); the rest
+      // take the local field from background removal.
+      const model = dlRegistry[dipoleMethod];
+      const isTotalField = DL_TOTAL_FIELD_MODELS.has(dipoleMethod);
+      const invField = isTotalField ? b0Fieldmap : localField;
+      const invMask = isTotalField ? mask : erodedMask;
+      const dlProgress = (done, total) => {
+        const frac = total ? done / total : 0;
+        postProgress(0.7 + frac * 0.22, `${dipoleMethod.toUpperCase()}: tile ${done}/${total}`);
+      };
+      qsmResult = await runDlFieldInversion(model, invField, invMask, nx, ny, nz, vsx, vsy, vsz, dlProgress, pipelineSettings?.dl_tiling);
+    } else {
+      qsmResult = new Float64Array(wasmModule.run_dipole_inversion_wasm(
+        localField, erodedMask, nx, ny, nz, vsx, vsy, vsz,
+        magField || 3.0, new Float64Array(echoTimesSec),
+        0, 0, 1, magnitudeForInversion,
+        configToml, invProgress,
+      ));
+    }
 
     // Already in ppm (pipeline stage handles all unit conversions)
     let qsmMin = Infinity, qsmMax = -Infinity;

@@ -14,10 +14,19 @@ const isModule = typeof exports !== 'undefined' || (typeof window !== 'undefined
 
 // Application version — 0.0.0 in git; the release CI stamps the real version (the release
 // tag) into the build at deploy time. Single source of truth is the git tag.
-export const VERSION = '0.0.0';
+export const VERSION = '0.0.0'; // 0.0.0 in git; the release CI stamps the real version at deploy time
 
 // QSM.rs core library version (the pinned qsm-core dependency tag in rust-wasm/Cargo.toml)
-export const QSM_RS_VERSION = '0.23.0';
+export const QSM_RS_VERSION = '0.28.0';
+
+// Where deep-learning model weights are fetched from in the browser. The qsm-core model
+// registry points at OSF, which does NOT send CORS headers, so a browser fetch from it
+// fails — this base overrides it with a CORS-enabled mirror. Files are fetched as
+// `<base>/<weight-file-name>`. Hugging Face `resolve/main` URLs are public + CORS-enabled
+// (Access-Control-Allow-Origin: *), so they work both locally and on the deployed site.
+// (A relative path like 'models' resolves against the app root for same-origin dev serving;
+// '' falls back to the registry's OSF URLs, which the browser can't fetch cross-origin.)
+export const MODEL_WEIGHT_BASE_URL = 'https://huggingface.co/qsmxt/qsm-onnx-weights/resolve/main';
 
 // Physics constants
 export const PHYSICS = {
@@ -415,6 +424,9 @@ export const PIPELINE_DEFAULTS = {
   harperella: { ...HARPERELLA_DEFAULTS },
   iharperella: { ...HARPERELLA_DEFAULTS },
   dipole_inversion: 'rts',
+  // Deep-learning overlap-tiling (browser only; keeps DL nets within the 32-bit wasm heap).
+  // On by default with a browser-safe 64³ patch; the settings modal can change/disable it.
+  dl_tiling: { enabled: true, tile_size: 56, tile_halo: 4 },
   tkd: { ...TKD_DEFAULTS },
   tsvd: { ...TSVD_DEFAULTS },
   tikhonov: { ...TIKHONOV_DEFAULTS },

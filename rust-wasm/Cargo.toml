@@ -12,20 +12,28 @@ crate-type = ["cdylib", "rlib"]
 default = ["console_error_panic_hook"]
 simd = ["qsm-core/simd"]
 onnx = ["qsm-core/onnx", "dep:getrandom"]
+# Multithreading via wasm threads (SharedArrayBuffer + Web Worker pool). Turns on qsm-core's
+# rayon paths (all classical algorithms) and the tiled-DL parallel tile loop. Requires a
+# threaded build (nightly + -Z build-std + target-feature=+atomics,+bulk-memory) and a
+# cross-origin-isolated page (COOP/COEP). See build.sh and the coi service worker.
+parallel = ["qsm-core/parallel", "dep:wasm-bindgen-rayon"]
 
 [dependencies]
-# Core QSM algorithms. No `parallel` feature — WASM is single-threaded.
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", tag = "v0.27.2" }
+# Core QSM algorithms. `parallel` (rayon) is enabled via our own `parallel` feature for
+# threaded wasm builds; plain builds stay single-threaded.
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", tag = "v0.28.0" }
 
 # Pipeline configuration, command generation, methods text.
 # qsmxt-config's canonical home is the QSMxT/QSMxT workspace (the old
 # astewartau/qsmxt.rs repo is being retired).
-qsmxt-config = { git = "https://github.com/QSMxT/QSMxT.git", tag = "v9.13.0" }
+qsmxt-config = { git = "https://github.com/QSMxT/QSMxT.git", tag = "v9.14.0" }
 
 # WASM bindings
 # getrandom (pulled by tract-onnx) needs the "js" backend on wasm32 (browser crypto).
 getrandom = { version = "0.2", features = ["js"], optional = true }
 wasm-bindgen = "0.2"
+# Rayon threadpool for wasm (spawns Web Workers); only linked with the `parallel` feature.
+wasm-bindgen-rayon = { version = "1.2", optional = true }
 js-sys = "0.3"
 serde_json = "1"
 console_error_panic_hook = { version = "0.1", optional = true }
@@ -36,3 +44,9 @@ wasm-bindgen-test = "0.3"
 [profile.release]
 opt-level = 3
 lto = true
+
+# wasm-pack runs wasm-opt after the build; without --enable-threads it would strip the shared
+# memory / atomics back out of threaded builds. These flags keep them (harmless for
+# single-threaded builds).
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ['-O2', '--enable-threads', '--enable-bulk-memory', '--enable-mutable-globals']
