@@ -2,6 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <!-- Cross-origin isolation for wasm threads (SharedArrayBuffer). Static hosts like GitHub Pages
+       can't send COOP/COEP headers, so this service-worker shim injects them client-side and
+       reloads once on first visit. Must load FIRST, before any other script. No-op when the server
+       already sets the headers (e.g. local serve.py). https://github.com/gzuidhof/coi-serviceworker
+       Use COEP: credentialless so cross-origin subresources (tagify/unpkg, Google fonts) still load
+       without CORP headers while SharedArrayBuffer stays enabled (Chrome/Firefox; Safari degrades to
+       non-isolated → single-threaded but functional). -->
+  <script>window.coi = { coepCredentialless: () => true };</script>
+  <script src="coi-serviceworker.js"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>QSMbly | Quantitative Susceptibility Mapping</title>
   <link rel="icon" href="favicon.ico" type="image/x-icon">
@@ -461,6 +470,14 @@
               <div class="brush-size-control" id="brushSizeControl" style="display: none;">
                 <label class="param-label" style="font-size: 0.7rem;">Brush Size: <span id="brushSizeValue">2</span></label>
                 <input type="range" id="brushSize" min="1" max="10" value="2" class="threshold-slider">
+                <div class="brush-mode-buttons" style="margin-top: var(--space-xs);">
+                  <button class="btn btn-secondary btn-sm active" id="brushShapeSquare" title="Square brush (cube when 3D)">Square</button>
+                  <button class="btn btn-secondary btn-sm" id="brushShapeCircle" title="Circle brush (sphere when 3D)">Circle</button>
+                </div>
+                <label class="checkbox-label" style="font-size: 0.7rem; margin-top: var(--space-xs);" title="Paint through neighbouring slices instead of only the current slice">
+                  <input type="checkbox" id="brush3D">
+                  <span>3D brush</span>
+                </label>
               </div>
               <div class="drawing-actions" id="drawingActions" style="display: none;">
                 <button class="btn btn-secondary btn-sm" id="undoDraw" title="Undo last stroke">
@@ -570,6 +587,18 @@
                 <option value="whqsm">WH-QSM</option>
                 <option value="hdqsm">HD-QSM</option>
                 <option value="ilsqr">iLSQR</option>
+                <option value="amp-pe">AMP-PE</option>
+                <optgroup label="Deep learning (downloads weights)">
+                  <option value="xqsm">xQSM</option>
+                  <option value="qsmnet">QSMnet</option>
+                  <option value="qsmnet-plus">QSMnet+</option>
+                  <option value="qsmgan">QSMGAN</option>
+                  <option value="ir2qsm">IR2QSM</option>
+                  <option value="lpcnn">LPCNN</option>
+                  <option value="modl-qsm">MoDL-QSM</option>
+                  <option value="autoqsm">AutoQSM</option>
+                  <option value="nextqsm">NeXtQSM</option>
+                </optgroup>
               </select>
             </div>
           </div>
@@ -1428,7 +1457,38 @@
               <option value="whqsm">WH-QSM (Weak-Harmonic)</option>
               <option value="hdqsm">HD-QSM (Hybrid Data Fidelity)</option>
               <option value="ilsqr">iLSQR (iterative Least Squares QR)</option>
+              <option value="amp-pe">AMP-PE (Approximate Message Passing)</option>
+              <optgroup label="Deep learning (downloads weights)">
+                <option value="xqsm">xQSM</option>
+                <option value="qsmnet">QSMnet</option>
+                <option value="qsmnet-plus">QSMnet+</option>
+                <option value="qsmgan">QSMGAN</option>
+                <option value="ir2qsm">IR2QSM</option>
+                <option value="lpcnn">LPCNN</option>
+                <option value="modl-qsm">MoDL-QSM</option>
+                <option value="autoqsm">AutoQSM</option>
+                <option value="nextqsm">NeXtQSM</option>
+              </optgroup>
             </select>
+          </div>
+
+          <!-- Deep-learning tiling controls (shown for DL inversion methods). In the browser DL nets
+               run overlap-tiled to fit the 32-bit wasm heap; these expose/adjust that. -->
+          <div id="dl_inversion_settings" class="method-settings" style="display: none;">
+            <div class="param-group">
+              <label class="param-label" for="dlTiled">
+                <input type="checkbox" id="dlTiled" checked> Tiled inference (bounded memory)
+              </label>
+            </div>
+            <div class="param-group">
+              <label class="param-label" for="dlTileSize">Tile core size (voxels)</label>
+              <input type="number" id="dlTileSize" value="56" min="16" max="192" step="8">
+            </div>
+            <div class="param-group">
+              <label class="param-label" for="dlTileHalo">Tile halo (voxels)</label>
+              <input type="number" id="dlTileHalo" value="4" min="0" max="32" step="1">
+            </div>
+            <div id="dlTilingWarning" class="method-warning" style="display: none;"></div>
           </div>
 
           <!-- TKD Settings -->

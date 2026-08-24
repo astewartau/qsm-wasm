@@ -16,6 +16,15 @@ import {
   NDI_DEFAULTS, FANSI_DEFAULTS, L1QSM_DEFAULTS, WHQSM_DEFAULTS, HDQSM_DEFAULTS,
 } from '../app/config.js';
 
+// Deep-learning inversion methods and how browser tiling applies to each:
+//  - TILEABLE: overlap-tiling works well (approximate but sound) — default tiled.
+//  - NATIVE_TILE: the net is already patch-based, so it never OOMs and the tile options are moot.
+//  - OFFDESIGN: global (k-space) ops → not soundly tileable; runs whole-volume (may OOM) — prefer QSMxT.
+const DL_TILEABLE = new Set(['xqsm', 'qsmnet', 'qsmnet-plus', 'ir2qsm']);
+const DL_NATIVE_TILE = new Set(['qsmgan', 'autoqsm']);
+const DL_OFFDESIGN = new Set(['lpcnn', 'modl-qsm', 'nextqsm']);
+const DL_INVERSION_METHODS = new Set([...DL_TILEABLE, ...DL_NATIVE_TILE, ...DL_OFFDESIGN]);
+
 export class PipelineSettingsController {
   constructor(modalElement) {
     this.modal = modalElement;
@@ -439,6 +448,11 @@ export class PipelineSettingsController {
         maxit: parseInt(this._getEl('lbvMaxit'))
       },
       dipole_inversion: this._getEl('dipole_method'),
+      dl_tiling: {
+        enabled: this._getChecked('dlTiled'),
+        tile_size: parseInt(this._getEl('dlTileSize')) || 56,
+        tile_halo: (v => Number.isFinite(v) ? v : 4)(parseInt(this._getEl('dlTileHalo')))
+      },
       tkd: {
         threshold: parseFloat(this._getEl('tkdThreshold'))
       },
@@ -841,6 +855,13 @@ export class PipelineSettingsController {
     this._showEl('whqsm_settings', dipoleMethod === 'whqsm');
     this._showEl('hdqsm_settings', dipoleMethod === 'hdqsm');
     this._showEl('ilsqr_settings', dipoleMethod === 'ilsqr');
+    this._showEl('dl_inversion_settings', DL_INVERSION_METHODS.has(dipoleMethod));
+    // Deep-learning tiling controls (default: tiled on, browser-safe 56/4).
+    const dlTiling = settings.dl_tiling || {};
+    this._setChecked('dlTiled', dlTiling.enabled !== false);
+    this._setEl('dlTileSize', dlTiling.tile_size ?? 56);
+    this._setEl('dlTileHalo', dlTiling.tile_halo ?? 4);
+    this._updateDlTilingWarning(dipoleMethod);
 
     // TKD settings
     this._setEl('tkdThreshold', settings.tkd.threshold);
@@ -989,7 +1010,14 @@ export class PipelineSettingsController {
       this._showEl('whqsm_settings', method === 'whqsm');
       this._showEl('hdqsm_settings', method === 'hdqsm');
       this._showEl('ilsqr_settings', method === 'ilsqr');
+      this._showEl('dl_inversion_settings', DL_INVERSION_METHODS.has(method));
+      this._updateDlTilingWarning(method);
       this._onCombinedMethodChange(); // Re-check visibility for MEDI SMV
+    });
+
+    // Deep-learning tiling controls — refresh the warning when any of them change.
+    ['dlTiled', 'dlTileSize', 'dlTileHalo'].forEach(id => {
+      this._on(id, 'change', () => this._updateDlTilingWarning(this._getEl('dipole_method')));
     });
 
     // QSMART inner inversion method change - show that algorithm's params
@@ -1037,6 +1065,29 @@ export class PipelineSettingsController {
   _getEl(id) {
     const el = document.getElementById(id);
     return el ? el.value : null;
+  }
+
+  /** Update the deep-learning tiling warning box for the current method + tiling state. */
+  _updateDlTilingWarning(method) {
+    const box = document.getElementById('dlTilingWarning');
+    if (!box) return;
+    if (!DL_INVERSION_METHODS.has(method)) { box.style.display = 'none'; return; }
+    const tiled = this._getChecked('dlTiled');
+    const nice = method.toUpperCase();
+    let msg;
+    if (DL_NATIVE_TILE.has(method)) {
+      msg = `${nice} is inherently patch-based, so it always fits in memory — the tiling options above have no effect on it.`;
+    } else if (DL_OFFDESIGN.has(method)) {
+      msg = tiled
+        ? `⚠ ${nice} uses global (k-space) operations, so tiling it is strongly off-design — each tile only sees local context and the result is approximate. It's tiled here only so it runs in the browser at all; for a real result run this model in QSMxT.`
+        : `⚠ With tiling off, ${nice} loads the entire volume and will almost certainly exhaust the browser's memory. Keep tiling on (approximate), or run it in QSMxT.`;
+    } else if (!tiled) {
+      msg = `⚠ With tiling off, ${nice} loads the entire volume and can exhaust the browser's memory (the tab may crash on clinical-size data). Keep tiling on, or run it in QSMxT.`;
+    } else {
+      msg = `Tiled inference is approximate (≈0.94 correlation vs whole-volume; some low-frequency drift). For a publication-quality result, run ${nice} in QSMxT.`;
+    }
+    box.textContent = msg;
+    box.style.display = '';
   }
 
   _setEl(id, value) {

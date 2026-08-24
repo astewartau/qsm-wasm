@@ -147,6 +147,7 @@ MriResearchTools.jl/
 # Rust build artifacts
 rust-wasm/target/
 rust-wasm/pkg/
+rust-wasm/pkg-dl/
 
 # Example data (downloaded from OSF by build.sh / CI)
 data/
@@ -155,3 +156,4 @@ data/
 wasm/*.wasm
 
 paper/
+models/*.onnx

@@ -79,10 +79,11 @@ jobs:
 
           echo "Stamped app version $VERSION into the build"
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Setup Rust (nightly + rust-src for wasm threads build-std)
+        uses: dtolnay/rust-toolchain@nightly
         with:
           targets: wasm32-unknown-unknown
+          components: rust-src
 
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
@@ -92,12 +93,8 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Build WASM
-        working-directory: rust-wasm
-        run: wasm-pack build --target web --release
-
-      - name: Generate algorithm defaults from QSM.rs
-        run: node scripts/generate-defaults.mjs
+      - name: Build WASM (threaded base + DL bundles; runs generate-defaults, copies to wasm/)
+        run: ./build.sh --simd
 
       - name: Upload WASM to release
         if: github.event_name == 'release'
@@ -105,8 +102,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "${{ github.event.release.tag_name }}" \
-            rust-wasm/pkg/qsm_wasm.js \
-            rust-wasm/pkg/qsm_wasm_bg.wasm \
+            wasm/qsm_wasm.js wasm/qsm_wasm_bg.wasm \
+            wasm/qsm_wasm_dl.js wasm/qsm_wasm_dl_bg.wasm \
             --clobber
 
       - name: Download example data from OSF
@@ -156,13 +153,13 @@ jobs:
           # Copy example data
           cp -r data deploy/
 
-          # Copy built WASM
-          cp rust-wasm/pkg/qsm_wasm.js deploy/wasm/
-          cp rust-wasm/pkg/qsm_wasm_bg.wasm deploy/wasm/
-          cp rust-wasm/pkg/qsm_wasm.d.ts deploy/wasm/
-          cp rust-wasm/pkg/qsm_wasm_bg.wasm.d.ts deploy/wasm/
+          # Copy the built WASM bundles (base + DL + romeo) plus the
+          # wasm-bindgen-rayon worker snippets that build.sh emitted into wasm/.
+          cp -r wasm/. deploy/wasm/
 
-          cp wasm/package.json deploy/wasm/ 2>/dev/null || true
+          # coi-serviceworker installs COOP/COEP client-side so SharedArrayBuffer
+          # (wasm threads) works on GitHub Pages, which can't set those headers.
+          cp coi-serviceworker.js deploy/
 
       - name: Setup Pages
         uses: actions/configure-pages@v4

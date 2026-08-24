@@ -19,6 +19,15 @@ const ROOT = join(__dirname, '..');
 const wasmJsPath = join(ROOT, 'rust-wasm', 'pkg', 'qsm_wasm.js');
 const wasmBinaryPath = join(ROOT, 'rust-wasm', 'pkg', 'qsm_wasm_bg.wasm');
 
+// The threaded (wasm-bindgen-rayon) build's worker glue references browser worker globals
+// (`self`, `addEventListener`) at module load, which don't exist in Node. Stub them so this
+// introspection import doesn't crash — we only call pure get_*_defaults(), never start a pool.
+if (typeof globalThis.self === 'undefined') {
+  globalThis.self = globalThis;
+  globalThis.addEventListener = () => {};
+  globalThis.removeEventListener = () => {};
+}
+
 const wasmModule = await import(wasmJsPath);
 const wasmBinary = await readFile(wasmBinaryPath);
 await wasmModule.default(wasmBinary);

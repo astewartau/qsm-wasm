@@ -547,13 +547,13 @@ class QSMApp {
       this.maskOpsHistory = ['threshold:otsu'];
       this.updateOutput("Applying robust refinement (dilate, fill holes, erode x2)...");
       this.dilateMask3D();
-      this.maskOpsHistory.push('dilate:1');
+      this._pushMaskOp('dilate');
       this.fillHoles3D();
       this.maskOpsHistory.push('fill-holes:0');
       this.erodeMask3D();
-      this.maskOpsHistory.push('erode:1');
+      this._pushMaskOp('erode');
       this.erodeMask3D();
-      this.maskOpsHistory.push('erode:1');
+      this._pushMaskOp('erode');
       await this.displayCurrentMask();
       this.updateOutput("Robust mask complete");
     });
@@ -723,7 +723,7 @@ class QSMApp {
     document.getElementById('erodeMask')?.addEventListener('click', async () => {
       this.updateOutput("Eroding mask...");
       this.erodeMask3D();
-      this.maskOpsHistory.push('erode:1');
+      this._pushMaskOp('erode');
       await this.displayCurrentMask();
       this.updateOutput("Mask eroded");
     });
@@ -731,7 +731,7 @@ class QSMApp {
     document.getElementById('dilateMask')?.addEventListener('click', async () => {
       this.updateOutput("Dilating mask...");
       this.dilateMask3D();
-      this.maskOpsHistory.push('dilate:1');
+      this._pushMaskOp('dilate');
       await this.displayCurrentMask();
       this.updateOutput("Mask dilated");
     });
@@ -757,12 +757,20 @@ class QSMApp {
     });
 
     document.getElementById('brushSize')?.addEventListener('input', (e) => {
-      this.brushSize = parseInt(e.target.value);
+      this.setBrushSize(parseInt(e.target.value));
       document.getElementById('brushSizeValue').textContent = this.brushSize;
-      if (this.drawingEnabled) {
-        this.nv.setPenValue(this.brushMode === 'add' ? 1 : 0, false);
-        this.nv.opts.penSize = this.brushSize;
-      }
+    });
+
+    document.getElementById('brush3D')?.addEventListener('change', (e) => {
+      this.setBrush3D(e.target.checked);
+    });
+
+    document.getElementById('brushShapeSquare')?.addEventListener('click', () => {
+      this.setBrushShape('square');
+    });
+
+    document.getElementById('brushShapeCircle')?.addEventListener('click', () => {
+      this.setBrushShape('circle');
     });
 
     document.getElementById('undoDraw')?.addEventListener('click', () => {
@@ -2211,6 +2219,20 @@ class QSMApp {
   }
 
   // 3D morphological erosion - delegates to MaskController
+  // Append an erode/dilate op to the mask history, collapsing successive same-type ops into a
+  // single iteration count (so three erode clicks record `erode:3`, not `erode:1,erode:1,erode:1`).
+  // This keeps the generated `--mask ...` string and the methods prose concise and correct.
+  _pushMaskOp(type) {
+    const h = this.maskOpsHistory;
+    const last = h[h.length - 1];
+    const m = last && /^(erode|dilate):(\d+)$/.exec(last);
+    if (m && m[1] === type) {
+      h[h.length - 1] = `${type}:${parseInt(m[2], 10) + 1}`;
+    } else {
+      h.push(`${type}:1`);
+    }
+  }
+
   erodeMask3D() {
     // Sync mask to controller
     this.maskController.currentMaskData = this.currentMaskData;
@@ -2287,6 +2309,16 @@ class QSMApp {
   setBrushSize(size) {
     this.brushSize = size;
     this.maskController.setBrushSize(size);
+  }
+
+  // Toggle 3D brush - delegates to MaskController
+  setBrush3D(enabled) {
+    this.maskController.setBrush3D(enabled);
+  }
+
+  // Set brush shape (square or circle) - delegates to MaskController
+  setBrushShape(shape) {
+    this.maskController.setBrushShape(shape);
   }
 
   // Apply the drawing to the current mask - delegates to MaskController
