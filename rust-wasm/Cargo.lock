@@ -889,7 +889,7 @@ dependencies = [
 [[package]]
 name = "qsmxt-config"
 version = "0.0.0"
-source = "git+https://github.com/QSMxT/QSMxT.git?tag=v9.14.0#d8729aedbb316780697b13e82a7611a271133bc9"
+source = "git+https://github.com/QSMxT/QSMxT.git?tag=v9.15.0#0f16f49c710757065d0d82aa42c5ee34a2788fb1"
 dependencies = [
  "qsm-core",
  "serde",
