@@ -21,12 +21,12 @@ parallel = ["qsm-core/parallel", "dep:wasm-bindgen-rayon"]
 [dependencies]
 # Core QSM algorithms. `parallel` (rayon) is enabled via our own `parallel` feature for
 # threaded wasm builds; plain builds stay single-threaded.
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", tag = "v0.28.0" }
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", tag = "v0.30.0" }
 
 # Pipeline configuration, command generation, methods text.
 # qsmxt-config's canonical home is the QSMxT/QSMxT workspace (the old
 # astewartau/qsmxt.rs repo is being retired).
-qsmxt-config = { git = "https://github.com/QSMxT/QSMxT.git", tag = "v9.14.0" }
+qsmxt-config = { git = "https://github.com/QSMxT/QSMxT.git", tag = "v9.17.0" }
 
 # WASM bindings
 # getrandom (pulled by tract-onnx) needs the "js" backend on wasm32 (browser crypto).
